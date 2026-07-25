@@ -16,7 +16,7 @@
     overscroll-behavior:none;-webkit-user-select:none;user-select:none}
   #c{touch-action:none}
   /* phone layout: compact panels inside the safe area, scrollable plan */
-  @media (max-width:760px){
+  @media (max-width:900px){
     .panel{padding:10px 12px;font-size:12px}
     #plan{top:calc(8px + env(safe-area-inset-top));left:calc(8px + env(safe-area-inset-left));
       width:210px;max-height:52vh}
@@ -27,6 +27,18 @@
     .big{font-size:24px}
     input[type=number]{width:48px}
     select{max-width:110px}
+    /* the hide button gets a real thumb target and sits clear of the panels */
+    #hideUI{top:auto;bottom:calc(14px + env(safe-area-inset-bottom));
+      padding:12px 20px;font-size:20px;background:rgba(21,27,38,.95)}
+    /* portrait: stack the panels full-width instead of squeezing side by side */
+    @media (orientation:portrait){
+      #plan{width:calc(100vw - 16px);max-height:46vh}
+      #hud{top:auto;bottom:calc(74px + env(safe-area-inset-bottom));
+        left:calc(8px + env(safe-area-inset-left));right:auto;
+        width:calc(100vw - 16px);text-align:left}
+      #hud .row{display:inline-flex;width:48%;gap:6px}
+      #result{width:calc(100vw - 40px)}
+    }
   }
   #wrap{position:fixed;inset:0}
   canvas{display:block}
@@ -61,10 +73,18 @@
   .barwrap{height:8px;background:#0f1622;border-radius:5px;overflow:hidden;margin:4px 0 10px}
   .bar{height:100%;background:var(--accent);width:0%}
   .mono{font-variant-numeric:tabular-nums}
+  /* clean-view toggle: hides every panel for an unobstructed ride */
+  #hideUI{position:absolute;top:calc(16px + env(safe-area-inset-top));
+    left:50%;transform:translateX(-50%);width:auto;margin:0;padding:6px 12px;
+    background:rgba(21,27,38,.9);color:var(--dim);border:1px solid var(--line);
+    border-radius:8px;font-size:15px;line-height:1;z-index:20;cursor:pointer}
+  body.clean #plan,body.clean #hud,body.clean #result{display:none!important}
+  body.clean #hideUI{opacity:.35}
 </style>
 </head>
 <body>
 <div id="wrap"><canvas id="c"></canvas></div>
+<button id="hideUI" title="hide/show panels (H)">◱</button>
 
 <div id="plan" class="panel">
   <h2>Daily Kicker</h2>
@@ -1396,6 +1416,7 @@ function replay(){
 // ── input ──
 addEventListener('keydown',e=>{
   const tag=(e.target.tagName||'');if(tag==='INPUT'||tag==='SELECT')return;
+  if(e.code==='KeyH'){$('hideUI').onclick(e);return;}
   if(e.code==='Space'){e.preventDefault();
     if(state==='plan')startDrop();
     else if(state==='fly')tapBeat(run.t);
@@ -1404,6 +1425,10 @@ addEventListener('keydown',e=>{
 });
 $('go').onclick=()=>{if(state==='plan')startDrop();};
 $('again').onclick=replay;
+// clean view: hide every panel (button or H) — the ride, nothing else
+$('hideUI').onclick=e=>{e.stopPropagation();
+  document.body.classList.toggle('clean');
+  $('hideUI').textContent=document.body.classList.contains('clean')?'◲':'◱';};
 // TOUCH = SPACE. A tap on the snow does whatever Space does in that phase, so
 // the whole game is playable one-thumb on a phone (panels still tappable).
 canvas.addEventListener('pointerdown',e=>{
