@@ -30,6 +30,8 @@
   <div class="sub" style="margin:6px 0 0">tap <span class="k">Space</span> in the air for the next beat · twist is locked on grab poses (the trick owns it)</div>
   <div class="row" style="margin-top:12px"><label>Forgiveness</label><input id="forg" type="range" min="0" max="1" step="0.05" value="0.55"></div>
   <button id="copyCfg" class="ghost" style="margin-top:8px">Copy setup</button>
+  <p class="sub" style="margin:10px 0 0;text-align:center">
+    or <a href="play.html" style="color:var(--accent)">ride the mountain freely →</a></p>
   <button id="go">Drop in &nbsp;<span class="k" style="background:#04101f;border-color:#04101f">Space</span></button>
 </div>
 
@@ -42,9 +44,9 @@
   <div class="row"><label>Cork done</label><span class="mono" id="rRoll">0.00</span></div>
   <div class="row" style="margin-top:8px"><label>Pose</label><span class="mono" id="poseName" style="font-size:12px">—</span></div>
   <div class="barwrap"><div class="bar" id="poseBar"></div></div>
-  <div class="row"><label>|L| · |h|</label><span class="mono" id="dbgLH" style="font-size:12px">—</span></div>
-  <div class="row"><label>ω rev/s</label><span class="mono" id="dbgW" style="font-size:12px">—</span></div>
-  <div class="row"><label>I r/s/f</label><span class="mono" id="dbgI" style="font-size:12px">—</span></div>
+  <div class="row dbg"><label>|L| · |h|</label><span class="mono" id="dbgLH" style="font-size:12px">—</span></div>
+  <div class="row dbg"><label>ω rev/s</label><span class="mono" id="dbgW" style="font-size:12px">—</span></div>
+  <div class="row dbg"><label>I r/s/f</label><span class="mono" id="dbgI" style="font-size:12px">—</span></div>
 </div>
 
 <div id="result" class="panel">
@@ -64,6 +66,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/engine.js"></script>
 <script src="js/game.js"></script>
 </body>
 </html>

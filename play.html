@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Free Ride — Daily Kicker</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/play.css">
+</head>
+<body class="play">
+<div id="hud" class="panel">
+  <h2>Free Ride</h2>
+  <div class="row"><label>km/h</label><span class="mono" id="spd">0</span></div>
+  <div class="row"><label>air</label><span class="mono" id="air">—</span></div>
+  <div class="row"><label>spin</label><span class="mono" id="spin">0°</span></div>
+  <div class="row"><label>best</label><span class="mono" id="best">—</span></div>
+  <div class="row"><label>km</label><span class="mono" id="dist">0.00</span></div>
+</div>
+
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="band" class="big"></div>
+  <div id="help">
+    <b>Drag the snow</b> to steer · <b>Ollie</b> to pop · in the air, drag to spin
+    <span class="keys">keyboard: A/D steer · W tuck · S brake · Space ollie · Q/E cork · Shift grab · R reset</span>
+  </div>
+</div>
+
+<div id="bar">
+  <button id="grabBtn" class="barbtn" title="grab (Shift)">✊</button>
+  <button id="ollieBtn" class="barbtn primary">Ollie</button>
+  <button id="resetBtn" class="barbtn" title="reset (R)">↺</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/play.js"></script>
+</body>
+</html>

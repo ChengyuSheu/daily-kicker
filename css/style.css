@@ -110,7 +110,11 @@ body.clean #hideUI{opacity:.35}
     scrollbar-width:none;white-space:nowrap}
   #hud::-webkit-scrollbar{display:none}
   #hud h2{font-size:12px;margin:0;flex:0 0 auto}
-  #hud>.sub,#hud .barwrap,#hud .row:nth-last-child(-n+4){display:none}
+  /* hide the debug readouts, by CLASS. This used to be
+     `#hud .row:nth-last-child(-n+4)`, which meant "the last four rows" — on
+     any page whose HUD has only four rows that selector hides the entire HUD.
+     Mark what you mean instead of counting positions. */
+  #hud>.sub,#hud .barwrap,#hud .dbg{display:none}
   #hud .row{margin:0;gap:6px;font-size:11px;flex:0 0 auto;width:auto}
 
   /* settings ─ its own full screen, opaque, scrollable */

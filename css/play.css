@@ -1,0 +1,43 @@
+/* Free Ride — page-specific styling. Loaded AFTER style.css, so it may
+   override the shared layout; keep everything here scoped to .play so the
+   daily game is never affected. */
+
+/* Free Ride has no settings screen, so the layout is two rows plus the bar
+   on every screen size — the same partitioned model, never an overlay. */
+body.play{display:grid;grid-template-rows:auto minmax(0,1fr) auto;
+  grid-template-areas:"hud" "stage" "bar";
+  padding:env(safe-area-inset-top) env(safe-area-inset-right)
+          env(safe-area-inset-bottom) env(safe-area-inset-left)}
+
+body.play #hud{grid-area:hud;position:static;width:auto;text-align:left;
+  border-width:0 0 1px 0;border-radius:0;padding:7px 12px;backdrop-filter:none;
+  display:flex;align-items:baseline;gap:16px;overflow-x:auto;white-space:nowrap;
+  scrollbar-width:none}
+body.play #hud::-webkit-scrollbar{display:none}
+body.play #hud h2{font-size:12px;margin:0;flex:0 0 auto;color:var(--accent)}
+body.play #hud .row{margin:0;gap:6px;font-size:12px;flex:0 0 auto;width:auto}
+
+body.play #wrap{grid-area:stage;position:relative;inset:auto;min-height:0}
+body.play #bar{grid-area:bar;position:static;transform:none;left:auto;bottom:auto;
+  justify-content:space-between;gap:10px;padding:8px 12px;
+  border-top:1px solid var(--line);background:var(--panel)}
+body.play .barbtn{width:52px;height:46px;font-size:19px}
+body.play #ollieBtn{flex:1 1 auto;width:auto;height:46px}
+body.play .barbtn.held{background:var(--accent);color:#04101f;border-color:var(--accent)}
+
+/* landing verdict, centred over the stage only while it is fading */
+#band{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);
+  pointer-events:none;text-shadow:0 3px 14px rgba(0,0,0,.65);
+  font-size:34px;letter-spacing:.5px;text-transform:uppercase}
+#band:empty{display:none}
+
+/* one-line control hint, sitting inside the stage rather than over the UI */
+#help{position:absolute;left:0;right:0;bottom:0;padding:6px 12px;
+  font-size:11px;color:var(--dim);text-align:center;pointer-events:none;
+  background:linear-gradient(transparent,rgba(12,16,24,.75))}
+#help b{color:var(--ink);font-weight:600}
+#help .keys{display:block;opacity:.75;margin-top:2px}
+@media (max-width:900px){ #help .keys{display:none} }
+
+/* touch steering wants the canvas to swallow gestures, not scroll the page */
+body.play #c{touch-action:none}
