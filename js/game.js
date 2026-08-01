@@ -1283,52 +1283,82 @@ function replay(){
 }
 
 // ── input ──
-addEventListener('keydown',e=>{
-  const tag=(e.target.tagName||'');if(tag==='INPUT'||tag==='SELECT')return;
-  if(e.code==='KeyH'){$('hideUI').onclick(e);return;}
-  if(e.code==='Space'){e.preventDefault();
-    if(state==='plan')startDrop();
-    else if(state==='fly')tapBeat(run.t);
-    else if(state==='outro')showResult();
-    else if(state==='result')replay();}
-});
-$('go').onclick=()=>{if(state==='plan')startDrop();};
-$('again').onclick=replay;
-// clean view: hide every panel (button or H) — the ride, nothing else
-$('hideUI').onclick=e=>{e.stopPropagation();
-  document.body.classList.toggle('clean');
-  $('hideUI').textContent=document.body.classList.contains('clean')?'◲':'◱';};
-// ── PORTRAIT SHEET: the plan panel is a pull-up sheet. Collapsed it shows a
-// one-line summary of the run; tap the handle to open, tap Drop in to close
-// and ride. Keeps the 3D view unobstructed on a phone.
-const sheetOpen=()=>document.body.classList.contains('sheet');
-function setSheet(on){document.body.classList.toggle('sheet',on);updSheetLbl();}
-function updSheetLbl(){}   // tab is an icon now; the trick lives in the sheet + HUD
-$('sheetGrab').onclick=e=>{e.stopPropagation();setSheet(!sheetOpen());};
-$('go').addEventListener('click',()=>setSheet(false));   // planning done → ride
-// resize/rotate: keep the renderer honest and never leave a sheet open in a
-// layout that has no sheet (desktop / tall landscape)
-addEventListener('orientationchange',()=>setTimeout(()=>{resize();
-  if(!matchMedia('(max-width:900px) and (orientation:portrait)').matches
-     &&!matchMedia('(max-height:560px) and (orientation:landscape)').matches)
-    setSheet(false);},120));
-// TOUCH = SPACE. A tap on the snow does whatever Space does in that phase, so
-// the whole game is playable one-thumb on a phone (panels still tappable).
-canvas.addEventListener('pointerdown',e=>{
-  e.preventDefault();
-  if(sheetOpen()){setSheet(false);return;}          // tap the view to dismiss the sheet
+// ── THE ONE ACTION. Space, a tap on the snow, and the action-bar button all
+// do the same phase-appropriate thing, so there is exactly one rule to learn.
+function primaryAction(){
   if(state==='plan')startDrop();
   else if(state==='fly')tapBeat(run.t);
   else if(state==='outro')showResult();
   else if(state==='result')replay();
+}
+// Label for the action-bar button, by phase. Null means "nothing to do here"
+// (the in-run is automatic), and the button is hidden rather than lying.
+const ACT_LABEL={plan:'Drop in',fly:'Beat',outro:'Skip',result:'Try again',inrun:null};
+function updAct(){
+  const el=$('act');if(!el)return;
+  const lbl=ACT_LABEL[state];
+  if(lbl===null||lbl===undefined){el.hidden=true;return;}
+  el.hidden=false;
+  if(el.textContent!==lbl)el.textContent=lbl;
+}
+
+addEventListener('keydown',e=>{
+  const tag=(e.target.tagName||'');if(tag==='INPUT'||tag==='SELECT')return;
+  if(e.code==='KeyH'){$('hideUI').onclick(e);return;}
+  if(e.code==='Space'){e.preventDefault();primaryAction();}
+});
+$('go').onclick=()=>{if(state==='plan')startDrop();};
+$('again').onclick=replay;
+$('act').onclick=e=>{e.stopPropagation();if(sheetOpen())setSheet(false);primaryAction();};
+// clean view: hide every panel (button or H) — the ride, nothing else
+$('hideUI').onclick=e=>{e.stopPropagation();
+  document.body.classList.toggle('clean');
+  $('hideUI').textContent=document.body.classList.contains('clean')?'◲':'◱';};
+// ── SETTINGS SCREEN. On a phone the plan panel is a screen you switch to,
+// not a sheet that covers the game; body.sheet swaps it in for the 3D stage.
+const sheetOpen=()=>document.body.classList.contains('sheet');
+function setSheet(on){document.body.classList.toggle('sheet',on);resize();}
+$('sheetGrab').onclick=e=>{e.stopPropagation();setSheet(!sheetOpen());};
+$('go').addEventListener('click',()=>setSheet(false));   // planning done → ride
+// rotate: re-measure, and never strand the settings screen open in a layout
+// that has no settings screen (desktop)
+addEventListener('orientationchange',()=>setTimeout(()=>{resize();
+  if(!matchMedia('(max-width:900px), (max-height:600px)').matches)setSheet(false);
+},120));
+// TOUCH = SPACE. A tap on the snow does whatever Space does in that phase, so
+// the whole game is playable one-thumb on a phone.
+canvas.addEventListener('pointerdown',e=>{
+  e.preventDefault();
+  primaryAction();
 },{passive:false});
 
 // ── camera (baked: dialed in live on 2026-07-21, panel removed) ──
 const CAM={side:8.2,up:7.5,back:10,rise:4.6,pull:4.8,aim:-2.25,stiff:3.5};
 const camPos=new THREE.Vector3(32,6,-2),camTgt=new THREE.Vector3(0,0,6);
-function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h,false);
-  camera.aspect=w/h;camera.updateProjectionMatrix();}
-addEventListener('resize',resize);resize();
+// The canvas no longer fills the window: on a phone it is one row of a grid
+// that shares the screen with the HUD and the action bar. Measure the ELEMENT,
+// never the viewport, or the render is stretched by exactly the height of the
+// chrome around it.
+//
+// Checked every frame rather than on the resize event alone. Rows change height
+// without the window ever resizing (opening settings, the HUD dropping out on a
+// short screen), and mobile browsers fire resize inconsistently while the URL
+// bar collapses. The comparison below makes the no-op case free.
+//
+// NOTE: compare CSS pixels, not renderer.domElement.width — setPixelRatio means
+// the backing buffer is w*dpr, so on any retina screen a buffer comparison would
+// never match and this would reallocate every single frame.
+let _vw=0,_vh=0;
+function resize(){
+  const host=canvas.parentNode;
+  const w=Math.max(1,host.clientWidth),h=Math.max(1,host.clientHeight);
+  if(w===_vw&&h===_vh)return;
+  _vw=w;_vh=h;
+  renderer.setSize(w,h,false);
+  camera.aspect=w/h;camera.updateProjectionMatrix();
+}
+addEventListener('resize',resize);
+resize();
 function qSpinStep(q,w,dt){
   const h=qMul(q,[0,w[0],w[1],w[2]]);
   return qNorm([q[0]+0.5*h[0]*dt,q[1]+0.5*h[1]*dt,q[2]+0.5*h[2]*dt,q[3]+0.5*h[3]*dt]);
@@ -1337,6 +1367,8 @@ function qSpinStep(q,w,dt){
 // ═══════════════════ MAIN LOOP ═══════════════════
 function tick(now){
   requestAnimationFrame(tick);
+  resize();   // stage can change height without a window resize; no-ops when unchanged
+  updAct();   // phase drives the action-bar label; cheap, and no-ops when unchanged
   const dtF=Math.min(0.033,(now-lastT)/1000);lastT=now;
   frameDt=dtF;
 

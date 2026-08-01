@@ -11,10 +11,8 @@
 </head>
 <body>
 <div id="wrap"><canvas id="c"></canvas></div>
-<button id="hideUI" title="hide/show panels (H)">◱</button>
 
 <div id="plan" class="panel">
-  <div id="sheetGrab" title="plan your run"><span id="sheetLbl"></span></div>
   <h2>Daily Kicker</h2>
   <p class="sub" id="dateLbl"></p>
   <div class="trick">Today: <b id="trickTxt">—</b><div class="sub" id="trickSub" style="margin:4px 0 0"></div></div>
@@ -54,6 +52,15 @@
   <div class="big" id="band">—</div>
   <div id="rdetail" class="sub"></div>
   <button id="again" class="ghost">Try again &nbsp;<span class="k">Space</span></button>
+</div>
+
+<!-- Action bar. On a phone this is a real row of the layout, not a floating
+     overlay: it owns its own strip of the screen so nothing sits on top of
+     the 3D view. On desktop it collapses to the clean-view toggle. -->
+<div id="bar">
+  <button id="sheetGrab" class="barbtn" title="plan your run" aria-label="Plan your run">⚙</button>
+  <button id="act" class="barbtn primary">Drop in</button>
+  <button id="hideUI" class="barbtn" title="hide/show panels (H)" aria-label="Hide panels">◱</button>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
