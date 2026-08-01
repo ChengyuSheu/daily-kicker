@@ -133,7 +133,11 @@ const R={
   drift:0,                        // heading of travel; lags yaw on a carve
   edge:0,                         // -1 toe .. +1 heel
   air:false, airT:0,
-  q:[1,0,0,0], w:[0,0,0],         // body orientation + angular rate (rev/s)
+  q:[1,0,0,0],                    // body orientation
+  L:[0,0,0],                      // WORLD angular momentum — set at the lip,
+                                  // conserved in the air, never added to
+  w:[0,0,0],                      // derived ω = I⁻¹L, for display only
+  wind:0,                         // the coil you load on the ground, -1..1
   spin:0, dist:0,
 };
 // A snowboarder rides SIDEWAYS. The body model is built with the board's
@@ -206,13 +210,32 @@ const CARVE_R=17;                 // metres at full edge
 const YAW_LIMIT=1.15;             // ±66° from the fall line; no riding uphill
 const CFG=defaultConfig();
 
+// ── TAKEOFF: the only moment rotation is created ──────────────────────────
+// You cannot torque yourself in mid-air; there is nothing to push against.
+// Every bit of rotation comes from the ground, so it is set ONCE here, from
+// the coil you wound up on the approach plus the yaw the carve already had.
+// After this L is constant until you touch down again.
+const WIND_REV=0.95, CARVE_REV=0.22, FLIP_REV=0.65, CORK_REV=0.55;
+function takeoff(){
+  const parts=partsFromPose(currentPose());
+  const I=bodyInertia(parts).I;
+  // body axes: board runs along X, up is Y, across the board is Z
+  const spin=(R.wind*WIND_REV+R.edge*CARVE_REV)*TAU;   // yaw, about Y
+  const flip=IN.pitch*FLIP_REV*TAU;                    // over the nose, about Z
+  const cork=IN.roll*CORK_REV*TAU;                     // along the board, about X
+  R.L=qRot(R.q,mv3(I,[cork,spin,flip]));
+  R.wind*=0.12;                     // the coil is spent into the spin
+  R.spin=0;R.airT=0;
+}
 function ollie(){
   if(R.air||crashT>0)return;
-  R.air=true;R.airT=0;R.vy+=POP;R.y+=0.02;R.spin=0;R.w=[0,0,0];
+  R.air=true;R.vy+=POP;R.y+=0.02;
+  takeoff();
 }
 function reset(){
   R.x=0;R.z=0;R.v=8;R.vy=0;R.yaw=0;R.drift=0;R.edge=0;
-  R.air=false;R.airT=0;R.q=[1,0,0,0];R.w=[0,0,0];R.spin=0;R.dist=0;
+  R.air=false;R.airT=0;R.q=[1,0,0,0];R.L=[0,0,0];R.w=[0,0,0];
+  R.wind=0;R.spin=0;R.dist=0;
   R.y=terrainH(0,0);landCrouch=0;lastBand='';bandT=0;crashT=0;
 }
 
@@ -249,22 +272,34 @@ function stepRide(dt){
     const vyT=(h1-h0)/dt;                     // vertical rate of the snow itself
     // Would following the ground require falling faster than gravity? If the
     // terrain drops away harder than a free body would, you have left it.
+    // WIND UP. Holding an edge coils the torso against the board; that stored
+    // twist is what you unwind through the lip. It bleeds away if you ride
+    // neutral, so a spin has to be set up rather than summoned.
+    R.wind=clamp(R.wind+IN.steer*1.15*dt,-1,1);
+    if(IN.steer===0)R.wind-=R.wind*Math.min(1,1.6*dt);
+
     const xN=R.x+Math.sin(R.drift)*R.v*dt, zN=R.z+Math.cos(R.drift)*R.v*dt;
     const hN=terrainH(xN,zN);
     if(h1+vyT*dt-0.5*G*dt*dt>hN+0.015){
-      R.air=true;R.airT=0;R.vy=vyT;R.y=h1;R.spin=0;R.w=[0,0,0];
+      R.air=true;R.vy=vyT;R.y=h1;
+      takeoff();                    // a lip sets rotation the same way a pop does
     }else{
       R.y=h1;R.vy=vyT;
     }
     landCrouch=Math.max(0,landCrouch-dt);
   }else{
     R.airT+=dt;
-    R.w[1]+=IN.steer*2.2*dt;
-    R.w[0]+=IN.pitch*1.7*dt;
-    R.w[2]+=IN.roll*1.7*dt;
-    for(let i=0;i<3;i++)R.w[i]=clamp(R.w[i],-2.6,2.6);
-    R.q=qStep(R.q,[R.w[0]*TAU,R.w[1]*TAU,R.w[2]*TAU],dt);
-    R.spin+=Math.abs(R.w[1])*dt;
+    // ── CONSERVED ROTATION ──────────────────────────────────────────────
+    // L is fixed. What you control is the moment of inertia: tuck or grab and
+    // I falls, so ω = I⁻¹L rises and you spin FASTER for the same momentum;
+    // sprawl out and you slow down. That is the whole of mid-air control, and
+    // it is why a rider grabs to bring a spin round and opens up to check it.
+    const parts=partsFromPose(currentPose());
+    const Lb=qRotInv(R.q,R.L);                 // momentum in body axes
+    const wb=mv3(inv3(bodyInertia(parts).I),Lb);
+    R.w=wb;
+    R.q=qStep(R.q,qRot(R.q,wb),dt);
+    R.spin+=Math.abs(wb[1])/TAU*dt;            // revolutions of yaw
     R.vy-=G*dt;
     R.y+=R.vy*dt;
     R.x+=Math.sin(R.drift)*R.v*dt;
@@ -290,7 +325,8 @@ function land(){
     if(score>best)best=score;
   }
   if(band==='crash')crashT=1.1;
-  R.yaw=R.drift;R.w=[0,0,0];R.vy=0;R.spin=0;
+  // touching down is what kills the rotation — the snow takes the momentum
+  R.yaw=R.drift;R.L=[0,0,0];R.w=[0,0,0];R.vy=0;R.spin=0;R.wind=0;
   landCrouch=band==='crash'?1.0:0.42;
 }
 
@@ -339,11 +375,27 @@ function currentPose(){
   }else if(landCrouch>0){
     base=blendPose(poseOf('Landing crouch'),base,1-clamp(landCrouch/0.6,0,1));
   }else if(R.air){
-    base=IN.grab?poseOf(GRAB_POSE.indy||'Indy grab'):poseOf('Athletic stance');
-    if(!IN.grab&&Math.abs(R.w[1])>0.6)
-      base=blendPose(base,poseOf(R.w[1]>0?'Wind-up':'Counter-rotate'),0.35);
+    // These pose choices are not cosmetic: they change the inertia tensor,
+    // which is the only thing that can change a rotation RATE once you are in
+    // the air. Measured from the shared pose library:
+    //
+    //   stance  Ixx 15.75  Iyy 4.02  Izz 18.48
+    //   grab    Ixx  5.04  Iyy 5.10  Izz  6.58
+    //   sprawl  Ixx 16.59  Iyy 5.80  Izz 19.96
+    //
+    // So a grab does NOT speed up a flat spin — folding over moves mass away
+    // from the vertical axis and yaw actually slows slightly. What it collapses
+    // is the flip and cork axes, ~3x, which is why a rider tucks to bring a
+    // corked rotation round. Yaw is fastest standing tall; sprawling checks it.
+    if(IN.grab)      base=blendPose(base,poseOf(GRAB_POSE.indy||'Indy grab'),0.92);
+    else if(IN.tuck) base=blendPose(base,poseOf('Tuck'),0.8);
+    else if(IN.brake)base=blendPose(base,poseOf('Sprawl'),0.75);
   }else if(IN.tuck){
     base=blendPose(poseOf('Athletic stance'),poseOf('Tuck'),0.85);
+  }else if(Math.abs(R.wind)>0.05){
+    // show the coil: the torso winds against the board before it unwinds
+    base=blendPose(base,poseOf(R.wind>0?'Wind-up':'Counter-rotate'),
+                   Math.min(0.85,Math.abs(R.wind)));
   }
   return resolvePose(base);
 }
@@ -580,6 +632,12 @@ function updHUD(){
   $('spd').textContent=(R.v*3.6).toFixed(0);
   $('air').textContent=R.air?R.airT.toFixed(2):'—';
   $('spin').textContent=(R.spin*360).toFixed(0)+'°';
+  // the coil is the whole setup: you cannot make this in the air
+  const c=$('coil');
+  if(R.air){ c.textContent=(Math.abs(R.w[1])/TAU).toFixed(2)+' r/s'; c.className='mono'; }
+  else { const p=Math.round(Math.abs(R.wind)*100);
+         c.textContent=(R.wind>0.02?'▸':R.wind<-0.02?'◂':'')+p+'%';
+         c.className='mono '+(p>60?'grade-red':p>25?'grade-blue':''); }
   $('best').textContent=best?best+'°':'—';
   $('dist').textContent=(R.dist/1000).toFixed(2);
   const deg=Math.atan(pitchTan(R.z))*180/Math.PI;
