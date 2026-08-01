@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Daily Kicker</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<button id="hideUI" title="hide/show panels (H)">◱</button>
+
+<div id="plan" class="panel">
+  <div id="sheetGrab" title="plan your run"><span id="sheetLbl"></span></div>
+  <h2>Daily Kicker</h2>
+  <p class="sub" id="dateLbl"></p>
+  <div class="trick">Today: <b id="trickTxt">—</b><div class="sub" id="trickSub" style="margin:4px 0 0"></div></div>
+  <div class="row"><label>Jump</label>
+    <select id="jump"><option value="small">Small (1.2 s)</option><option value="medium" selected>Medium (1.6 s)</option><option value="large">Large (2.0 s)</option><option value="xl">XL (2.4 s)</option><option value="bigair">Big Air (3.3 s)</option></select></div>
+  <div class="row"><label>Setup edge</label>
+    <select id="edge"><option value="0">Flat (no carve)</option><option value="1" selected>Heel — frontside</option><option value="-1">Toe — backside</option></select></div>
+  <div class="sub" id="carveInfo" style="margin:2px 0 8px"></div>
+  <div class="row"><label>Extra spin throw (rev)</label><input id="pSpin" type="number" step="0.25" value="0"></div>
+  <div class="sub" id="windInfo" style="margin:2px 0 8px"></div>
+  <div class="row"><label>Flip (rev)</label><input id="pFlip" type="number" step="0.25" value="0"></div>
+  <div class="row"><label>Cork/roll (rev)</label><input id="pRoll" type="number" step="0.25" value="0"></div>
+  <div class="row" style="margin-top:10px"><label>Pose beats</label><button class="mini ghost" id="addBeat">+ beat</button></div>
+  <div id="beats"></div>
+  <div class="sub" style="margin:6px 0 0">tap <span class="k">Space</span> in the air for the next beat · twist is locked on grab poses (the trick owns it)</div>
+  <div class="row" style="margin-top:12px"><label>Forgiveness</label><input id="forg" type="range" min="0" max="1" step="0.05" value="0.55"></div>
+  <button id="copyCfg" class="ghost" style="margin-top:8px">Copy setup</button>
+  <button id="go">Drop in &nbsp;<span class="k" style="background:#04101f;border-color:#04101f">Space</span></button>
+</div>
+
+<div id="hud" class="panel">
+  <h2 id="phase">Plan your run</h2>
+  <p class="sub" id="phaseSub" style="margin:0 0 10px">set rotation &amp; beats, then drop</p>
+  <div class="row"><label>Air time</label><span class="mono" id="tAir">—</span></div>
+  <div class="row"><label>Spin done</label><span class="mono" id="rSpin">0.00</span></div>
+  <div class="row"><label>Flip done</label><span class="mono" id="rFlip">0.00</span></div>
+  <div class="row"><label>Cork done</label><span class="mono" id="rRoll">0.00</span></div>
+  <div class="row" style="margin-top:8px"><label>Pose</label><span class="mono" id="poseName" style="font-size:12px">—</span></div>
+  <div class="barwrap"><div class="bar" id="poseBar"></div></div>
+  <div class="row"><label>|L| · |h|</label><span class="mono" id="dbgLH" style="font-size:12px">—</span></div>
+  <div class="row"><label>ω rev/s</label><span class="mono" id="dbgW" style="font-size:12px">—</span></div>
+  <div class="row"><label>I r/s/f</label><span class="mono" id="dbgI" style="font-size:12px">—</span></div>
+</div>
+
+<div id="result" class="panel">
+  <div class="sub" style="margin:0">Landing</div>
+  <div class="big" id="band">—</div>
+  <div id="rdetail" class="sub"></div>
+  <button id="again" class="ghost">Try again &nbsp;<span class="k">Space</span></button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
