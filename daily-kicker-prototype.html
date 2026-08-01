@@ -27,18 +27,86 @@
     .big{font-size:24px}
     input[type=number]{width:48px}
     select{max-width:110px}
-    /* the hide button gets a real thumb target and sits clear of the panels */
+    /* the hide button stays SQUARE, just a bigger thumb target */
     #hideUI{top:auto;bottom:calc(14px + env(safe-area-inset-bottom));
-      padding:12px 20px;font-size:20px;background:rgba(21,27,38,.95)}
-    /* portrait: stack the panels full-width instead of squeezing side by side */
-    @media (orientation:portrait){
-      #plan{width:calc(100vw - 16px);max-height:46vh}
-      #hud{top:auto;bottom:calc(74px + env(safe-area-inset-bottom));
-        left:calc(8px + env(safe-area-inset-left));right:auto;
-        width:calc(100vw - 16px);text-align:left}
-      #hud .row{display:inline-flex;width:48%;gap:6px}
-      #result{width:calc(100vw - 40px)}
-    }
+      width:44px;height:44px;padding:0;font-size:18px;background:rgba(21,27,38,.95)}
+  }
+  /* ══ PORTRAIT PHONE: a proper mobile app, not a squeezed desktop ══
+     Top = trick card + live stats strip. Bottom = a SHEET you pull up to plan
+     (collapsed to a handle by default) so the 3D view owns the screen.
+     RESPONSIVE: the sheet takes as much height as it needs up to 64vh — and on
+     SHORT screens it simply becomes FULL-SCREEN, because a cramped half-sheet
+     is worse than a menu that owns the display while you plan. */
+  @media (max-width:900px) and (orientation:portrait){
+    #hideUI{top:calc(8px + env(safe-area-inset-top));bottom:auto;
+      left:auto;right:calc(8px + env(safe-area-inset-right));transform:none;
+      width:38px;height:38px;padding:0;font-size:16px}
+    /* SETTINGS FIRST: a full-height side sheet — the primary surface on a
+       phone. Slides in over the view, sized to be comfortably usable. */
+    #plan{position:fixed!important;top:0!important;bottom:0!important;left:0!important;
+      right:auto!important;height:auto!important;max-height:none!important;
+      width:min(88vw,340px);border-radius:0 16px 16px 0;
+      border-width:0 1px 0 0;padding:calc(14px + env(safe-area-inset-top)) 18px
+      calc(20px + env(safe-area-inset-bottom));
+      transform:translateX(-101%);transition:transform .26s ease;
+      overflow-y:auto;-webkit-overflow-scrolling:touch;z-index:14}
+    body.sheet #plan{transform:translateX(0)}
+    body.sheet::after{content:'';position:fixed;inset:0;background:rgba(6,9,14,.55);z-index:13}
+    /* THE PRIMARY CONTROL: an accent-coloured tab on the left edge, hard to
+       miss, always reachable; it rides out with the sheet when open */
+    #sheetGrab{display:flex!important;align-items:center;justify-content:center;
+      position:fixed;top:50%;left:0;width:40px;height:112px;margin-top:-56px;
+      background:var(--accent);border:0;border-radius:0 14px 14px 0;
+      box-shadow:0 4px 18px rgba(0,0,0,.45);z-index:15;cursor:pointer;
+      transition:transform .26s ease}
+    body.sheet #sheetGrab{transform:translateX(min(88vw,340px));
+      background:rgba(21,27,38,.96);box-shadow:none}
+    #sheetGrab::after{content:'⚙';font-size:21px;color:#04101f}
+    body.sheet #sheetGrab::after{content:'✕';color:var(--dim);font-size:17px}
+    #sheetLbl{display:none}
+    #plan .row{margin:12px 0}
+    #plan select,#plan input[type=number]{font-size:16px;padding:8px 10px}
+    #plan input[type=range]{width:150px;height:28px}
+    #plan button{padding:14px;font-size:16px;border-radius:10px}
+    .beat select{flex:1}
+    /* TELEMETRY IS SECONDARY: a thin top ribbon, gone whenever the settings
+       sheet is open or the screen is small — it must never fight the menu */
+    #hud{top:calc(6px + env(safe-area-inset-top));left:44px;right:52px;width:auto;
+      text-align:left;padding:6px 10px;opacity:.9}
+    #hud h2{display:inline;font-size:12px}
+    #hud>.sub,#hud .barwrap,#hud .row:nth-last-child(-n+4){display:none}
+    #hud .row{display:inline-flex;width:auto;margin:0 10px 0 0;gap:6px;font-size:11px}
+    body.sheet #hud{display:none!important}
+    @media (max-height:640px){#hud{display:none}}
+    #result{width:calc(100vw - 32px);bottom:auto}
+  }
+  /* LANDSCAPE phone: identical model — settings slide in from the left edge,
+     telemetry shrinks to a corner and disappears on the shortest screens. */
+  @media (max-height:560px) and (orientation:landscape){
+    #plan{position:fixed!important;top:0!important;bottom:0!important;left:0!important;
+      right:auto!important;height:auto!important;max-height:none!important;
+      width:min(58vw,320px);border-radius:0 14px 14px 0;border-width:0 1px 0 0;
+      padding:calc(12px + env(safe-area-inset-top)) 16px 16px;
+      transform:translateX(-101%);transition:transform .26s ease;
+      overflow-y:auto;-webkit-overflow-scrolling:touch;z-index:14}
+    body.sheet #plan{transform:translateX(0)}
+    body.sheet::after{content:'';position:fixed;inset:0;background:rgba(6,9,14,.5);z-index:13}
+    #sheetGrab{display:flex!important;align-items:center;justify-content:center;
+      position:fixed;top:50%;left:0;width:36px;height:96px;margin-top:-48px;
+      background:var(--accent);border:0;border-radius:0 12px 12px 0;
+      box-shadow:0 4px 16px rgba(0,0,0,.45);z-index:15;cursor:pointer;
+      transition:transform .26s ease}
+    body.sheet #sheetGrab{transform:translateX(min(58vw,320px));
+      background:rgba(21,27,38,.96);box-shadow:none}
+    #sheetGrab::after{content:'⚙';font-size:19px;color:#04101f}
+    body.sheet #sheetGrab::after{content:'✕';color:var(--dim);font-size:16px}
+    #sheetLbl{display:none}
+    #plan select,#plan input[type=number]{font-size:16px;padding:7px 9px}
+    #plan button{padding:12px;font-size:15px}
+    #hud{font-size:11px;width:132px;padding:8px 10px}
+    #hud .barwrap,#hud .row:nth-last-child(-n+4){display:none}
+    body.sheet #hud{display:none!important}
+    @media (max-height:400px){#hud{display:none}}
   }
   #wrap{position:fixed;inset:0}
   canvas{display:block}
@@ -74,10 +142,13 @@
   .bar{height:100%;background:var(--accent);width:0%}
   .mono{font-variant-numeric:tabular-nums}
   /* clean-view toggle: hides every panel for an unobstructed ride */
+  #sheetGrab{display:none}
+  /* square icon button — never a stretched pill */
   #hideUI{position:absolute;top:calc(16px + env(safe-area-inset-top));
-    left:50%;transform:translateX(-50%);width:auto;margin:0;padding:6px 12px;
+    left:50%;transform:translateX(-50%);width:34px;height:34px;margin:0;padding:0;
+    display:flex;align-items:center;justify-content:center;
     background:rgba(21,27,38,.9);color:var(--dim);border:1px solid var(--line);
-    border-radius:8px;font-size:15px;line-height:1;z-index:20;cursor:pointer}
+    border-radius:9px;font-size:15px;line-height:1;z-index:20;cursor:pointer}
   body.clean #plan,body.clean #hud,body.clean #result{display:none!important}
   body.clean #hideUI{opacity:.35}
 </style>
@@ -87,6 +158,7 @@
 <button id="hideUI" title="hide/show panels (H)">◱</button>
 
 <div id="plan" class="panel">
+  <div id="sheetGrab" title="plan your run"><span id="sheetLbl"></span></div>
   <h2>Daily Kicker</h2>
   <p class="sub" id="dateLbl"></p>
   <div class="trick">Today: <b id="trickTxt">—</b><div class="sub" id="trickSub" style="margin:4px 0 0"></div></div>
@@ -845,6 +917,7 @@ function refreshTrick(){
   const axisName={spin:'spin',flip:'flip',roll:'cork'}[tk.axis];
   $('trickTxt').textContent=(tk.rev*360)+'° '+axisName+' · '+tk.grab;
   $('trickSub').textContent='land '+tk.stance+'  ·  '+tk.rev.toFixed(1)+' rev '+axisName;
+  if(typeof updSheetLbl==='function')updSheetLbl();
   // auto-fill the trick's grab into beat 2 ONLY while the player hasn't touched
   // the sequence — a customized sequence is never silently overwritten again
   if(state==='plan'&&beatsAuto&&beats.length>=2){beats[1].pose=GRAB_POSE[tk.grab]||'Indy grab';drawBeats();}
@@ -1429,10 +1502,25 @@ $('again').onclick=replay;
 $('hideUI').onclick=e=>{e.stopPropagation();
   document.body.classList.toggle('clean');
   $('hideUI').textContent=document.body.classList.contains('clean')?'◲':'◱';};
+// ── PORTRAIT SHEET: the plan panel is a pull-up sheet. Collapsed it shows a
+// one-line summary of the run; tap the handle to open, tap Drop in to close
+// and ride. Keeps the 3D view unobstructed on a phone.
+const sheetOpen=()=>document.body.classList.contains('sheet');
+function setSheet(on){document.body.classList.toggle('sheet',on);updSheetLbl();}
+function updSheetLbl(){}   // tab is an icon now; the trick lives in the sheet + HUD
+$('sheetGrab').onclick=e=>{e.stopPropagation();setSheet(!sheetOpen());};
+$('go').addEventListener('click',()=>setSheet(false));   // planning done → ride
+// resize/rotate: keep the renderer honest and never leave a sheet open in a
+// layout that has no sheet (desktop / tall landscape)
+addEventListener('orientationchange',()=>setTimeout(()=>{resize();
+  if(!matchMedia('(max-width:900px) and (orientation:portrait)').matches
+     &&!matchMedia('(max-height:560px) and (orientation:landscape)').matches)
+    setSheet(false);},120));
 // TOUCH = SPACE. A tap on the snow does whatever Space does in that phase, so
 // the whole game is playable one-thumb on a phone (panels still tappable).
 canvas.addEventListener('pointerdown',e=>{
   e.preventDefault();
+  if(sheetOpen()){setSheet(false);return;}          // tap the view to dismiss the sheet
   if(state==='plan')startDrop();
   else if(state==='fly')tapBeat(run.t);
   else if(state==='outro')showResult();
