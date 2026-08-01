@@ -24,12 +24,65 @@ body.play #hud h2{font-size:12px;margin:0;flex:0 0 auto;color:var(--accent)}
 body.play #hud .row{margin:0;gap:6px;font-size:12px;flex:0 0 auto;width:auto}
 
 body.play #wrap{grid-area:stage;position:relative;inset:auto;min-height:0}
-body.play #bar{grid-area:bar;position:static;transform:none;left:auto;bottom:auto;
-  justify-content:space-between;gap:10px;padding:8px 12px;
-  border-top:1px solid var(--line);background:var(--panel)}
-body.play .barbtn{width:46px;height:46px;font-size:18px}
-body.play #ollieBtn{flex:1 1 auto;width:auto;height:46px;min-width:96px}
-body.play .barbtn.held{background:var(--accent);color:#04101f;border-color:var(--accent)}
+/* small icon buttons live in the HUD ribbon, out of thumb territory */
+.hudbtn{width:26px;height:22px;margin:0 0 0 4px;padding:0;flex:0 0 auto;
+  background:transparent;color:var(--dim);border:1px solid var(--line);
+  border-radius:6px;font-size:12px;line-height:1;cursor:pointer}
+
+/* The carve pad is the coil gauge now, so the HUD does not repeat it. Narrow
+   screens have no room to show a number twice. */
+@media (max-width:760px){ body.play .coilrow{display:none} }
+
+/* ── the control deck ────────────────────────────────────────────────────
+   Two thumbs, nothing in the middle. Left: the carve pad, which is also the
+   coil gauge. Right: the actions, with OLLIE the biggest thing on screen
+   because it is the one you press most. Everything is >=44px. */
+#deck{grid-area:bar;display:flex;align-items:stretch;gap:10px;
+  padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+  border-top:1px solid var(--line);background:var(--panel);touch-action:none}
+#pad{flex:1 1 auto;position:relative;min-height:84px;border-radius:14px;
+  background:#0f1622;border:1px solid var(--line);
+  display:flex;align-items:flex-end;justify-content:center;
+  padding-bottom:7px;cursor:ew-resize;overflow:hidden;user-select:none}
+#pad.charged{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+#padTrack{position:absolute;left:10px;right:10px;top:50%;height:12px;margin-top:-14px;
+  border-radius:7px;background:#0a1017;border:1px solid var(--line)}
+#padCoil{position:absolute;left:50%;top:0;bottom:0;width:0;background:var(--accent);
+  opacity:.75;border-radius:7px}
+#padThumb{position:absolute;top:50%;left:50%;width:34px;height:34px;margin:-17px 0 0 -17px;
+  border-radius:50%;background:var(--ink);box-shadow:0 2px 10px rgba(0,0,0,.5);
+  transition:left .05s linear}
+.padlbl{position:relative;font-size:10px;letter-spacing:.9px;color:var(--dim);
+  pointer-events:none;font-weight:600}
+#pad.charged .padlbl{color:var(--accent)}
+
+#acts{flex:0 0 auto;display:flex;flex-direction:column;gap:8px;width:150px}
+.actrow{display:flex;gap:8px}
+.act{margin:0;height:38px;flex:1 1 0;border-radius:11px;
+  background:#0f1622;color:var(--ink);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;gap:5px;
+  font:600 12px/1 inherit;cursor:pointer}
+.act span{font-size:10px;letter-spacing:.5px;color:var(--dim)}
+.act.held{background:var(--accent);color:#04101f;border-color:var(--accent)}
+.act.held span{color:#04101f}
+.act.primary{height:46px;background:var(--accent);color:#04101f;border-color:var(--accent);
+  font-size:16px;letter-spacing:1px}
+.act.primary:active{filter:brightness(.88)}
+
+/* Landscape phones are short: the deck becomes side columns so the stage keeps
+   the height it needs, and both thumbs stay where they already are. */
+@media (orientation:landscape) and (max-height:560px){
+  body.play{grid-template-rows:auto minmax(0,1fr);
+    grid-template-columns:minmax(0,1fr);
+    grid-template-areas:"hud" "stage"}
+  #deck{position:fixed;inset:auto 0 0 0;top:0;background:none;border:0;
+    padding:0;pointer-events:none}
+  #pad{position:absolute;left:calc(8px + env(safe-area-inset-left));
+    bottom:calc(8px + env(safe-area-inset-bottom));width:min(38vw,230px);
+    min-height:74px;pointer-events:auto;background:rgba(15,22,34,.82)}
+  #acts{position:absolute;right:calc(8px + env(safe-area-inset-right));
+    bottom:calc(8px + env(safe-area-inset-bottom));width:150px;pointer-events:auto}
+}
 
 /* piste grading, coloured the way a trail map does it */
 .grade-blue{color:#4b9dff}

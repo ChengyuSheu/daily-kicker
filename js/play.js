@@ -196,42 +196,70 @@ function readInput(){
 // once kept steering on every later move — the board wandered off the fall
 // line and ended up riding back up the hill with no input at all.
 let steerPtr=null;
-canvas.addEventListener('pointerdown',e=>{
-  e.preventDefault();
-  steerPtr=e.pointerId;touchX0=e.clientX;touchSteer=0;
-  if(canvas.setPointerCapture)try{canvas.setPointerCapture(e.pointerId);}catch(_){}
+// ── CARVE PAD ───────────────────────────────────────────────────────────
+// An absolute pad, not a drag-from-wherever-you-touched gesture: your thumb
+// lands somewhere on it and that position IS the edge angle, so you can go
+// straight from a hard toe carve to a hard heel carve without lifting off.
+// Dragging the 3D view for this was worse in two ways — it hid the run under
+// your hand, and it stole the tap that should just make you jump.
+const pad=$('pad'), padThumb=$('padThumb'), padCoil=$('padCoil');
+let padPtr=null;
+function padSet(e){
+  const r=pad.getBoundingClientRect();
+  const half=r.width*0.42;
+  touchSteer=clamp((e.clientX-(r.left+r.width/2))/half,-1,1);
+}
+pad.addEventListener('pointerdown',e=>{
+  e.preventDefault();padPtr=e.pointerId;padSet(e);
+  if(pad.setPointerCapture)try{pad.setPointerCapture(e.pointerId);}catch(_){}
 },{passive:false});
-canvas.addEventListener('pointermove',e=>{
-  if(steerPtr!==e.pointerId)return;
-  if(e.pointerType==='mouse'&&!(e.buttons&1)){endTouch();return;}
-  touchSteer=clamp((e.clientX-touchX0)/70,-1,1);
+pad.addEventListener('pointermove',e=>{
+  if(padPtr!==e.pointerId)return;
+  if(e.pointerType==='mouse'&&!(e.buttons&1)){padEnd();return;}
+  padSet(e);
 },{passive:false});
-const endTouch=()=>{steerPtr=null;touchSteer=null;};
-canvas.addEventListener('pointerup',endTouch);
-canvas.addEventListener('pointercancel',endTouch);
-canvas.addEventListener('pointerleave',endTouch);
+const padEnd=()=>{padPtr=null;touchSteer=null;};
+pad.addEventListener('pointerup',padEnd);
+pad.addEventListener('pointercancel',padEnd);
+
+// Tap the snow to pop. The stage is the biggest target on the screen and the
+// thumb is often already there, so the most common action gets the easiest
+// gesture. It no longer steers, so a tap can mean exactly one thing.
+canvas.addEventListener('pointerdown',e=>{e.preventDefault();ollie();},{passive:false});
+
+// hold-to-load / hold-to-grab, with pointer capture so a thumb that slides off
+// the button still counts as held — losing a grab mid-flight because your
+// thumb drifted 3 px is not a skill test
+function holdBtn(el,on,off){
+  el.addEventListener('pointerdown',e=>{
+    e.preventDefault();e.stopPropagation();on();
+    if(el.setPointerCapture)try{el.setPointerCapture(e.pointerId);}catch(_){}
+  },{passive:false});
+  el.addEventListener('pointerup',e=>{e.stopPropagation();off();});
+  el.addEventListener('pointercancel',off);
+}
+holdBtn($('grabBtn'),()=>{touchGrab=true;},()=>{touchGrab=false;});
+holdBtn($('flipBtn'),()=>{touchFlip=true;},()=>{touchFlip=false;});
 $('ollieBtn').addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();ollie();},{passive:false});
-const grabOn=e=>{e.preventDefault();e.stopPropagation();touchGrab=true;};
-const grabOff=()=>{touchGrab=false;};
-$('grabBtn').addEventListener('pointerdown',grabOn,{passive:false});
-$('grabBtn').addEventListener('pointerup',grabOff);
-$('grabBtn').addEventListener('pointercancel',grabOff);
-$('grabBtn').addEventListener('pointerleave',grabOff);
-const flipOn=e=>{e.preventDefault();e.stopPropagation();touchFlip=true;};
-const flipOff=()=>{touchFlip=false;};
-$('flipBtn').addEventListener('pointerdown',flipOn,{passive:false});
-$('flipBtn').addEventListener('pointerup',flipOff);
-$('flipBtn').addEventListener('pointercancel',flipOff);
-$('flipBtn').addEventListener('pointerleave',flipOff);
-$('resetBtn').addEventListener('click',reset);
+$('resetBtn').addEventListener('click',e=>{e.stopPropagation();reset();});
 // controls sheet
 $('helpBtn').addEventListener('click',e=>{e.stopPropagation();
   document.body.classList.toggle('showhelp');});
 $('helpClose').addEventListener('click',e=>{e.stopPropagation();
-  document.body.classList.remove('showhelp');});
+  document.body.classList.remove('showhelp');
+  try{localStorage.setItem('freeride.seen','1');}catch(_){}});
 // play.html#controls opens straight to the controls — handy for linking
 // someone to "how do I spin" without making them find the button
 if(location.hash==='#controls')document.body.classList.add('showhelp');
+// First run opens the sheet once. The coil mechanic is not discoverable by
+// experiment — a new player mashes the air controls, nothing happens, and they
+// conclude the game is broken rather than that they needed to wind up first.
+// Flagged on OPEN, not on dismiss: otherwise reloading the page shows the
+// whole sheet again to someone who has already read it.
+else{ try{ if(!localStorage.getItem('freeride.seen')){
+  document.body.classList.add('showhelp');
+  localStorage.setItem('freeride.seen','1');
+} }catch(_){} }
 
 // ═══════════════════ RIDE PHYSICS ═══════════════════
 // Drag sets terminal speed, and terminal speed is what makes a grade mean
@@ -386,6 +414,7 @@ function land(){
     if(score>best)best=score;
   }
   if(band==='crash')crashT=1.1;
+  buzz(band==='stomp'?18:band==='sketchy'?[12,40,12]:band==='wash-out'?55:[30,60,90]);
   // touching down is what kills the rotation — the snow takes the momentum
   R.yaw=R.drift;R.L=[0,0,0];R.w=[0,0,0];R.vy=0;
   R.spin=0;R.flip=0;R.wind=0;R.windF=0;R.windC=0;
@@ -706,8 +735,12 @@ function stepCamera(dt){
   // the view fills with the underside of the terrain.
   const wantY=Math.max(baseY(cz)+up, terrainH(cx,cz)+2.2);
   const want=new THREE.Vector3(cx,wantY,cz);
-  const look=new THREE.Vector3(
-    R.x+Math.sin(R.drift)*13, R.y+1.0, R.z+Math.cos(R.drift)*13);
+  // Aim at the SNOW well ahead, not at a point level with the rider. Looking
+  // level on a slope that falls away fills most of the screen with sky; aiming
+  // at the ground you are about to ride tilts the view down and shows the
+  // features you actually need to see.
+  const lx=R.x+Math.sin(R.drift)*22, lz=R.z+Math.cos(R.drift)*22;
+  const look=new THREE.Vector3(lx, terrainH(lx,lz)+1.4, lz);
   if(!camInit){camPos.copy(want);camTgt.copy(look);camInit=true;}
   const k=1-Math.exp(-4.0*dt);
   camPos.lerp(want,k);camTgt.lerp(look,k);
@@ -762,7 +795,20 @@ function updHUD(){
   if(bandT>0){b.textContent=lastBand;b.className='big '+lastBand;}
   else{b.textContent='';b.className='big';}
   $('grabBtn').classList.toggle('held',IN.grab);
+  $('flipBtn').classList.toggle('held',Math.abs(R.windF)>0.03);
+  // carve pad: the thumb marks the edge, the bar behind it is the coil, so the
+  // one mechanic that decides your trick is visible under your thumb instead
+  // of buried in a number at the top of the screen
+  const st=(touchSteer!==null?touchSteer:IN.steer);
+  padThumb.style.left=(50+st*42)+'%';
+  padCoil.style.width=(Math.abs(R.wind)*50)+'%';
+  padCoil.style.transform=R.wind<0?'translateX(-100%)':'none';
+  pad.classList.toggle('charged',Math.abs(R.wind)>0.55);
+  $('padLbl').textContent=R.air?'IN THE AIR':
+    Math.abs(R.wind)>0.05?'COIL '+Math.round(Math.abs(R.wind)*100)+'%':'CARVE & COIL';
 }
+// short haptic cues — the one channel a phone has that a desktop does not
+function buzz(ms){ try{ if(navigator.vibrate)navigator.vibrate(ms); }catch(_){} }
 
 // ═══════════════════ LOOP ═══════════════════
 let last=performance.now();

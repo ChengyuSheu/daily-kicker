@@ -13,9 +13,11 @@
 <body class="play">
 <div id="hud" class="panel">
   <h2>Free Ride</h2>
+  <button id="helpBtn" class="hudbtn" title="how to ride" aria-label="How to ride">?</button>
+  <button id="resetBtn" class="hudbtn" title="reset (R)" aria-label="Reset">↺</button>
   <div class="row"><label>km/h</label><span class="mono" id="spd">0</span></div>
   <div class="row"><label>air</label><span class="mono" id="air">—</span></div>
-  <div class="row"><label>coil</label><span class="mono" id="coil">·0 ⟳0 ⟲0</span></div>
+  <div class="row coilrow"><label>coil</label><span class="mono" id="coil">0 ⟳0 ⟲0</span></div>
   <div class="row"><label>spin</label><span class="mono" id="spin">0°</span></div>
   <div class="row"><label>flip</label><span class="mono" id="flipv">0°</span></div>
   <div class="row"><label>best</label><span class="mono" id="best">—</span></div>
@@ -26,17 +28,24 @@
 <div id="wrap">
   <canvas id="c"></canvas>
   <div id="band" class="big"></div>
-  <div id="help">
-    <b>Wind up before the lip</b> — you cannot start a rotation in mid-air
-  </div>
+  <div id="help"><b>Wind up before the lip</b></div>
 </div>
 
-<div id="bar">
-  <button id="grabBtn" class="barbtn" title="grab — tightens flips and corks">✊</button>
-  <button id="flipBtn" class="barbtn" title="load a flip, then ollie">⟳</button>
-  <button id="ollieBtn" class="barbtn primary">Ollie</button>
-  <button id="helpBtn" class="barbtn" title="controls">?</button>
-  <button id="resetBtn" class="barbtn" title="reset (R)">↺</button>
+<!-- Control deck. Built for two thumbs: the left one lives on the carve pad,
+     the right one on the actions. Nothing important sits in the middle of the
+     screen where a hand would cover the run. -->
+<div id="deck">
+  <div id="pad" aria-label="Carve">
+    <div id="padTrack"><div id="padCoil"></div><div id="padThumb"></div></div>
+    <span class="padlbl" id="padLbl">CARVE &amp; COIL</span>
+  </div>
+  <div id="acts">
+    <div class="actrow">
+      <button id="flipBtn" class="act" aria-label="Load flip">⟳<span>FLIP</span></button>
+      <button id="grabBtn" class="act" aria-label="Grab">✊<span>GRAB</span></button>
+    </div>
+    <button id="ollieBtn" class="act primary">OLLIE</button>
+  </div>
 </div>
 
 <!-- Controls. The physics here is unusual enough that it needs explaining:
@@ -51,38 +60,40 @@
 
     <h3>1 · Wind up on the ground</h3>
     <table>
-      <tr><td class="k2">A / D</td><td>carve left or right — also coils a <b>spin</b></td></tr>
-      <tr><td class="k2">↑ / ↓</td><td>load a <b>flip</b> (front or back)</td></tr>
-      <tr><td class="k2">Q / E</td><td>load a <b>cork</b> (off-axis roll)</td></tr>
+      <tr><td class="k2">Carve pad</td><td>slide your left thumb — carving also coils a <b>spin</b>. The bar behind the thumb fills as it winds</td></tr>
+      <tr><td class="k2">⟳ Flip</td><td><b>hold</b> to load a flip</td></tr>
     </table>
-    <p class="sub">The <b>coil</b> readout shows all three. They fade slowly if you
-      let go, so a flip you loaded a second ago is still there when the lip arrives.</p>
+    <p class="sub">The coils fade slowly when you let go, so a flip you loaded a
+      second ago is still there when the lip arrives.</p>
 
     <h3>2 · Leave the ground</h3>
     <table>
-      <tr><td class="k2">Space</td><td><b>Ollie</b> — pops, and spends every coil into rotation</td></tr>
-      <tr><td class="k2">—</td><td>a kicker launches you the same way, using whatever you have loaded</td></tr>
+      <tr><td class="k2">OLLIE</td><td>pops, and spends every coil into rotation</td></tr>
+      <tr><td class="k2">Tap the snow</td><td>same as Ollie — quicker when your thumb is already there</td></tr>
+      <tr><td class="k2">A kicker</td><td>launches you the same way, using whatever you have loaded</td></tr>
     </table>
 
-    <h3>3 · In the air: change your shape, not your momentum</h3>
+    <h3>3 · In the air: change your shape</h3>
     <table>
-      <tr><td class="k2">Shift</td><td><b>Grab</b> — tucks you up. Flips and corks go ~2.5× faster</td></tr>
-      <tr><td class="k2">S</td><td><b>Sprawl</b> — opens you out and slows a spin to check it</td></tr>
+      <tr><td class="k2">✊ Grab</td><td><b>hold</b> — tucks you up. Flips and corks go ~2.5× faster</td></tr>
+      <tr><td class="k2">Release</td><td>opens you out and slows the rotation to check it</td></tr>
     </table>
     <p class="sub">A grab does <b>not</b> speed up a flat spin: folding over moves mass
       away from the vertical axis, so yaw actually slows a little. Standing tall
       is the fastest spin there is. That is real, and it is why riders tuck for
       corked rotations and open up to bring one back down.</p>
-
-    <h3>Also</h3>
-    <table>
-      <tr><td class="k2">W</td><td>tuck for speed · <span class="k2">S</span> brake</td></tr>
-      <tr><td class="k2">R</td><td>reset</td></tr>
-      <tr><td class="k2">touch</td><td>drag the snow to carve · buttons for flip, grab and ollie</td></tr>
-    </table>
     <p class="sub">Land square to stomp it. The steeper the pitch the faster you go —
       the HUD shows the grade, blue through black.</p>
-    <button id="helpClose">Got it</button>
+
+    <h3>Keyboard</h3>
+    <table>
+      <tr><td class="k2">A / D</td><td>carve and coil a spin</td></tr>
+      <tr><td class="k2">↑ / ↓</td><td>load a flip · <span class="k2">Q / E</span> cork</td></tr>
+      <tr><td class="k2">Space</td><td>ollie · <span class="k2">Shift</span> grab</td></tr>
+      <tr><td class="k2">W / S</td><td>tuck for speed · brake and sprawl</td></tr>
+      <tr><td class="k2">R</td><td>reset</td></tr>
+    </table>
+    <button id="helpClose">Ride</button>
   </div>
 </div>
 
