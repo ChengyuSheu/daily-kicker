@@ -24,9 +24,20 @@ const smooth=t=>t*t*(3-2*t);
 // endless in both directions and always regenerates identically. Features
 // are placed by hashing a cell index, which means "what is at z=4210" has
 // an answer without having simulated the 4209 metres before it.
-const SLOPE=rad(17);              // steady fall line; +z is downhill
-const TAN=Math.tan(SLOPE);
-const baseY=z=>-z*TAN;
+// The mountain is not a constant ramp. Pitch varies along the fall line from
+// mellow blue to black-diamond steep. The height is the ANALYTIC INTEGRAL of
+// the slope profile, so gradient and height can never disagree — gravity is
+// taken from the same function that draws the snow.
+//
+//   dY/dz = -(PITCH0 + P1 sin(z/L1) + P2 sin(z/L2))
+//
+const PITCH0=0.40, P1=0.15, L1=140, P2=0.10, L2=53;
+const gradBase=z=>-(PITCH0+P1*Math.sin(z/L1)+P2*Math.sin(z/L2));
+const baseY=z=>-(PITCH0*z-P1*L1*Math.cos(z/L1)-P2*L2*Math.cos(z/L2))
+               -(P1*L1+P2*L2);                       // so baseY(0)=0
+// tan of the local pitch, always positive downhill: 0.15 .. 0.65 → 8.5°..33°
+const pitchTan=z=>PITCH0+P1*Math.sin(z/L1)+P2*Math.sin(z/L2);
+const gradeOf=deg=>deg<16?'blue':deg<25?'red':'black';
 
 // Deterministic hash → [0,1). Uses Math.imul throughout: plain `*` on these
 // constants overflows into double precision, the low bits are lost, and the
@@ -78,8 +89,18 @@ function rollH(x,z){
   return 0.34*Math.sin(z*0.077+x*0.031)+0.22*Math.sin(z*0.031-x*0.058)
         +0.13*Math.sin(x*0.11+z*0.017);
 }
+// Gullies: in places the mountain funnels into a trough with walls rising at
+// the sides, and in places it opens out flat again. Riding the wall of one is
+// the most interesting line on the hill, so they fade in and out along z.
+function gullyH(x,z){
+  const env=Math.sin(z/97)*0.5+0.5;
+  const amt=Math.max(0,env-0.42)/0.58;
+  if(amt<=0)return 0;
+  const t=clamp(x/17,-1.5,1.5);
+  return amt*3.4*t*t;
+}
 function terrainH(x,z){
-  let h=baseY(z)+rollH(x,z);
+  let h=baseY(z)+rollH(x,z)+gullyH(x,z);
   const k0=Math.floor((z-FEAT_SPACING)/FEAT_SPACING);
   for(let k=k0;k<=k0+2;k++){
     const f=featureAt(k);
@@ -173,7 +194,11 @@ $('grabBtn').addEventListener('pointerleave',grabOff);
 $('resetBtn').addEventListener('click',reset);
 
 // ═══════════════════ RIDE PHYSICS ═══════════════════
-const POP=4.9, DRAG=0.0050, EDGE_SCRUB=3.0, BRAKE=9.0;
+// Drag sets terminal speed, and terminal speed is what makes a grade mean
+// something: with it too low the black pitches ran to 104 km/h, faster than
+// anyone actually rides. At 0.009 a blue settles near 50 km/h and a black
+// near 88 — the difference you can feel between the two.
+const POP=4.9, DRAG=0.0090, EDGE_SCRUB=3.0, BRAKE=9.0;
 // A carve is a RADIUS, not a spin rate: yaw rate = v / radius. Driving yaw at
 // a fixed rad/s made the board pivot like a turntable — full edge produced a
 // 4 m circle and the rider never got down the hill.
@@ -202,7 +227,15 @@ function stepRide(dt){
   if(!R.air){
     R.edge=lerp(R.edge,IN.steer,1-Math.exp(-9*dt));
     const carve=Math.abs(R.edge);
-    let a=G*Math.sin(SLOPE)-DRAG*R.v*R.v-EDGE_SCRUB*carve*carve;
+    // Gravity comes from the slope ACTUALLY under the board, sampled from the
+    // same terrain function that draws the snow — so a black-diamond pitch
+    // really does accelerate you harder than a blue one, and a roller robs
+    // speed on the way up. A fixed G*sin(SLOPE) could not do either.
+    const ds=Math.max(0.6,R.v*dt);
+    const hHere=terrainH(R.x,R.z);
+    const hAhead=terrainH(R.x+Math.sin(R.drift)*ds,R.z+Math.cos(R.drift)*ds);
+    const theta=Math.atan(-(hAhead-hHere)/ds);      // + descending, - climbing
+    let a=G*Math.sin(theta)-DRAG*R.v*R.v-EDGE_SCRUB*carve*carve;
     if(IN.brake)a-=BRAKE;
     if(IN.tuck)a+=1.5;
     R.v=Math.max(0.8,R.v+a*dt);
@@ -319,44 +352,86 @@ function currentPose(){
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
 renderer.setPixelRatio(Math.min(2,devicePixelRatio));
 const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x9fc0e4);
-scene.fog=new THREE.Fog(0x9fc0e4,90,260);
-const camera=new THREE.PerspectiveCamera(52,1,0.1,600);
-scene.add(new THREE.AmbientLight(0xa8bcd8,0.85));
-scene.add(new THREE.HemisphereLight(0xdfeaf8,0x4a5568,0.6));
-const sun=new THREE.DirectionalLight(0xffffff,0.8);sun.position.set(14,26,-8);scene.add(sun);
+scene.background=new THREE.Color(0x8fb4dd);
+scene.fog=new THREE.Fog(0xa8c6e6,120,340);
+const camera=new THREE.PerspectiveCamera(52,1,0.1,900);
+// Snow whites out under flat light: with ambient near 1.0 every facet returns
+// the same value and the hill reads as a blank sheet. Keep ambient LOW and let
+// a strong, low, side-on sun do the modelling — that is what makes a bump a
+// bump. The sun is deliberately off-axis so slopes facing it and away from it
+// separate instead of shading symmetrically.
+scene.add(new THREE.AmbientLight(0x9fb4d0,0.30));
+scene.add(new THREE.HemisphereLight(0xdae8fa,0x5b6b80,0.38));
+const sun=new THREE.DirectionalLight(0xfff4e2,1.15);
+sun.position.set(-26,20,-12);scene.add(sun);
+const SUNDIR=new THREE.Vector3(-26,20,-12).normalize();
 
 // ── the snow: a height-field mesh that follows the rider. Rebuilt only when
 // the rider crosses a grid step, not every frame. ──
-const GW=34, GL=104, GS=2.4;                   // cols, rows, metres per cell
-const snowMat=new THREE.MeshStandardMaterial({color:0xf2f6fc,roughness:0.92,metalness:0,flatShading:true});
+const GW=44, GL=120, GS=2.2;                   // cols, rows, metres per cell
+const snowMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.94,metalness:0,
+  flatShading:true,vertexColors:true});
 const snowGeo=new THREE.BufferGeometry();
 const vtx=new Float32Array(GW*GL*3);
+const col=new Float32Array(GW*GL*3);
 const idx=[];
 for(let j=0;j<GL-1;j++)for(let i=0;i<GW-1;i++){
   const a=j*GW+i,b=a+1,c=a+GW,d=c+1;
   idx.push(a,c,b, b,c,d);
 }
 snowGeo.setAttribute('position',new THREE.BufferAttribute(vtx,3));
+snowGeo.setAttribute('color',new THREE.BufferAttribute(col,3));
 snowGeo.setIndex(idx);
 const snow=new THREE.Mesh(snowGeo,snowMat);
 snow.frustumCulled=false;
 scene.add(snow);
 let gridKey='';
+// Vertex shading. Lighting alone still leaves a smooth field ambiguous, so
+// each vertex is tinted by two extra cues a real snowfield gives you:
+//   ASPECT    — how the local surface faces the sun (the modelling)
+//   CURVATURE — how the point sits against its neighbours; hollows go blue,
+//               crests go bright. This is what makes a bump legible as a bump
+//               rather than a shade of white.
+// Plus faint contour banding every metre of height, like light sluff lines,
+// which gives the eye an absolute reference for where the ground is.
+const C_LIT=[1.00,1.00,1.00], C_SHADE=[0.46,0.56,0.72];
+function shadeAt(x,z,h){
+  const e=GS;
+  const hx=terrainH(x+e,z)-terrainH(x-e,z);
+  const hz=terrainH(x,z+e)-terrainH(x,z-e);
+  // surface normal of the height field
+  let nx=-hx/(2*e), ny=1, nz=-hz/(2*e);
+  const il=1/Math.hypot(nx,ny,nz); nx*=il;ny*=il;nz*=il;
+  let lit=nx*SUNDIR.x+ny*SUNDIR.y+nz*SUNDIR.z;
+  lit=clamp(lit*0.5+0.5,0,1);
+  // curvature: mean of neighbours minus this point
+  const avg=(terrainH(x+e,z)+terrainH(x-e,z)+terrainH(x,z+e)+terrainH(x,z-e))/4;
+  const curv=clamp((h-avg)*1.9,-0.5,0.5);
+  let f=clamp(lit*0.72+0.28+curv,0,1);
+  const band=Math.abs((h*1.0)%1);                  // contour reference lines
+  if(band<0.06)f*=0.90;
+  return [C_SHADE[0]+(C_LIT[0]-C_SHADE[0])*f,
+          C_SHADE[1]+(C_LIT[1]-C_SHADE[1])*f,
+          C_SHADE[2]+(C_LIT[2]-C_SHADE[2])*f];
+}
 function buildSnow(){
   const ox=Math.round(R.x/GS)*GS, oz=Math.round(R.z/GS)*GS;
   const key=ox+'|'+oz;
   if(key===gridKey)return;
   gridKey=key;
   for(let j=0;j<GL;j++){
-    const z=oz+(j-14)*GS;
+    const z=oz+(j-16)*GS;
     for(let i=0;i<GW;i++){
       const x=ox+(i-GW/2)*GS;
       const n=(j*GW+i)*3;
-      vtx[n]=x;vtx[n+1]=terrainH(x,z);vtx[n+2]=z;
+      const h=terrainH(x,z);
+      vtx[n]=x;vtx[n+1]=h;vtx[n+2]=z;
+      const c=shadeAt(x,z,h);
+      col[n]=c[0];col[n+1]=c[1];col[n+2]=c[2];
     }
   }
   snowGeo.attributes.position.needsUpdate=true;
+  snowGeo.attributes.color.needsUpdate=true;
   snowGeo.computeVertexNormals();
 }
 
@@ -396,6 +471,48 @@ function placeProps(){
   }
   for(;n<POOL;n++)props[n].g.visible=false;
 }
+
+// ── piste markers: orange-topped poles down both sides of the run. These are
+// the scale and speed reference. On an unbroken white field you genuinely
+// cannot tell 30 km/h from 80 — you need fixed things going past. ──
+const MARK_SPACING=22, MPOOL=20;
+const poleMat=new THREE.MeshStandardMaterial({color:0x1b2430,roughness:0.9});
+const flagMat=new THREE.MeshStandardMaterial({color:0xff7a1a,roughness:0.6,emissive:0x2e1000});
+const marks=[];
+for(let i=0;i<MPOOL;i++){
+  const g=new THREE.Group();
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,2.6,6),poleMat);
+  pole.position.y=1.3;
+  const flag=new THREE.Mesh(new THREE.CylinderGeometry(0.17,0.17,0.5,6),flagMat);
+  flag.position.y=2.5;
+  g.add(pole,flag);g.visible=false;scene.add(g);marks.push(g);
+}
+function placeMarks(){
+  const k0=Math.floor((R.z-24)/MARK_SPACING);
+  for(let n=0;n<MPOOL;n++){
+    const k=k0+(n>>1), side=(n&1)?1:-1, z=k*MARK_SPACING, x=side*22;
+    marks[n].visible=true;
+    marks[n].position.set(x,terrainH(x,z),z);
+  }
+}
+
+// ── distant peaks. They ride along with the rider at a fixed offset so they
+// never arrive: parallax you cannot reach, the way a horizon behaves. ──
+const peaks=new THREE.Group();
+const peakMat=new THREE.MeshStandardMaterial({color:0xbccfe6,roughness:1,flatShading:true});
+const capMat2=new THREE.MeshStandardMaterial({color:0xf2f7ff,roughness:1,flatShading:true});
+for(let i=0;i<16;i++){
+  const s=40+hashAt(i,31)*70;
+  const ang=(i/16)*Math.PI*2+hashAt(i,33)*0.3;
+  const rad2=300+hashAt(i,34)*90;
+  const m=new THREE.Mesh(new THREE.ConeGeometry(s*0.8,s,5),peakMat);
+  const cp=new THREE.Mesh(new THREE.ConeGeometry(s*0.34,s*0.42,5),capMat2);
+  cp.position.y=s*0.29;
+  const g=new THREE.Group();g.add(m,cp);
+  g.position.set(Math.sin(ang)*rad2,s*0.30,Math.cos(ang)*rad2);
+  peaks.add(g);
+}
+scene.add(peaks);
 
 // ── rider meshes, built from the SHARED body model ──
 const rider=new THREE.Group();scene.add(rider);
@@ -465,6 +582,11 @@ function updHUD(){
   $('spin').textContent=(R.spin*360).toFixed(0)+'°';
   $('best').textContent=best?best+'°':'—';
   $('dist').textContent=(R.dist/1000).toFixed(2);
+  const deg=Math.atan(pitchTan(R.z))*180/Math.PI;
+  const gr=gradeOf(deg);
+  const ge=$('grade');
+  ge.textContent=deg.toFixed(0)+'° '+gr;
+  ge.className='mono grade-'+gr;
   const b=$('band');
   if(bandT>0){b.textContent=lastBand;b.className='big '+lastBand;}
   else{b.textContent='';b.className='big';}
@@ -494,6 +616,8 @@ function tick(now){
 
   buildSnow();
   placeProps();
+  placeMarks();
+  peaks.position.set(R.x,baseY(R.z),R.z);   // horizon follows, never arrives
   stepCamera(dt);
   updHUD();
   renderer.render(scene,camera);
@@ -507,5 +631,9 @@ window.RIDE={R,IN,terrainH,featureAt,propAt,baseY,hashAt,camera,scene,props,
   stepRide,reset,ollie,groundQ,touch:()=>touchSteer};
 
 reset();
+// Warm the world up before the first frame. With vertexColors on, an
+// unpopulated colour buffer is all zeroes — i.e. black snow — so the grid must
+// be built once here rather than relying on the first animation frame.
+buildSnow();placeProps();placeMarks();
 requestAnimationFrame(tick);
 })();
