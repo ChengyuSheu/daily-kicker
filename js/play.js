@@ -49,18 +49,27 @@ function hash1(n){
   return (h>>>0)/4294967296;
 }
 const hashAt=(k,salt)=>hash1(Math.imul(k|0,0x27d4eb2d)^Math.imul(salt|0,0x165667b1));
+// 2-D cell hash. The world is a plane, not a corridor, so features are placed
+// on a grid in BOTH axes: ride as far across the mountain as you like and it
+// keeps generating. The first cut hashed only the z cell and pinned every
+// feature within +/-12 m of x=0, so traversing left you on a blank sheet.
+const hashAt2=(i,j,salt)=>hash1(Math.imul(i|0,0x27d4eb2d)^Math.imul(j|0,0x165667b1)
+                                ^Math.imul(salt|0,0x9e3779b1));
 
-// ── features: kickers, rollers and hips, one candidate per 46 m cell ──
-const FEAT_SPACING=46;
-function featureAt(k){
-  const r=hashAt(k,1);
+// ── features: kickers, rollers and hips, one candidate per cell ──
+// Columns are close together and the lateral jitter is modest: spread them too
+// far and a rider going straight down the fall line meets almost nothing (54 m
+// columns with +/-20 m jitter gave one jump in 90 seconds).
+const FEAT_SX=30, FEAT_SZ=42;
+function featureAt(i,j){
+  const r=hashAt2(i,j,1);
   if(r<0.16)return null;                       // some cells stay open
   const kind=r<0.52?'kicker':r<0.78?'roller':'hip';
-  const sizeR=hashAt(k,2);
+  const sizeR=hashAt2(i,j,2);
   return{
     kind,
-    z:k*FEAT_SPACING+hashAt(k,3)*16,
-    x:(hashAt(k,4)*2-1)*(kind==='hip'?12:6),
+    x:i*FEAT_SX+(hashAt2(i,j,4)*2-1)*12,
+    z:j*FEAT_SZ+hashAt2(i,j,3)*16,
     amp:kind==='roller'?0.9+sizeR*1.6:1.3+sizeR*2.6,
     len:kind==='roller'?11+sizeR*7:7+sizeR*7,
     wid:kind==='hip'?5.5+sizeR*3:6.5+sizeR*4.5
@@ -101,24 +110,33 @@ function gullyH(x,z){
 }
 function terrainH(x,z){
   let h=baseY(z)+rollH(x,z)+gullyH(x,z);
-  const k0=Math.floor((z-FEAT_SPACING)/FEAT_SPACING);
-  for(let k=k0;k<=k0+2;k++){
-    const f=featureAt(k);
-    if(f)h+=featH(f,x,z);
-  }
+  const i0=Math.round(x/FEAT_SX), j0=Math.round(z/FEAT_SZ);
+  for(let i=i0-1;i<=i0+1;i++)
+    for(let j=j0-1;j<=j0+1;j++){
+      const f=featureAt(i,j);
+      if(f)h+=featH(f,x,z);
+    }
   return h;
 }
 
 // ── props: snow-covered rocks and trees, also hash-placed ──
-const PROP_SPACING=9;
-function propAt(k){
-  const r=hashAt(k,11);
-  if(r<0.45)return null;
-  const side=hashAt(k,12)<0.5?-1:1;
-  const lane=6+hashAt(k,13)*26;                // keep the middle rideable
-  const isTree=hashAt(k,14)<0.62;
-  const s=0.7+hashAt(k,15)*0.9;
-  return{z:k*PROP_SPACING+hashAt(k,16)*6, x:side*lane,
+// Props are on a 2-D grid too, so glades and boulder fields exist wherever you
+// ride. Cells near the fall line are thinned out so there is always a line
+// through, rather than a wall of trees at x=0.
+// Density matters more than it looks: at one prop per ~99 m2 a rider carving
+// across the hill spent 35 seconds of every 60 sitting in the snow. These
+// numbers give glades you can actually pick a line through.
+const PROP_SX=15, PROP_SZ=13;
+function propAt(i,j){
+  const x0=i*PROP_SX, z0=j*PROP_SZ;
+  const r=hashAt2(i,j,11);
+  // Keep a genuinely rideable corridor. At 14% density inside 7 m the rider met
+  // a tree roughly every 60 m and spent the run crashing instead of riding.
+  const nearLine=Math.abs(x0)<11;
+  if(r<(nearLine?0.95:0.62))return null;
+  const isTree=hashAt2(i,j,14)<0.62;
+  const s=0.7+hashAt2(i,j,15)*0.9;
+  return{x:x0+(hashAt2(i,j,12)*2-1)*4, z:z0+hashAt2(i,j,16)*6,
          tree:isTree, s, r:isTree?0.7*s:0.9*s};
 }
 
@@ -137,8 +155,8 @@ const R={
   L:[0,0,0],                      // WORLD angular momentum — set at the lip,
                                   // conserved in the air, never added to
   w:[0,0,0],                      // derived ω = I⁻¹L, for display only
-  wind:0,                         // the coil you load on the ground, -1..1
-  spin:0, dist:0,
+  wind:0, windF:0, windC:0,       // coils loaded on the ground: spin/flip/cork
+  spin:0, flip:0, dist:0,
 };
 // A snowboarder rides SIDEWAYS. The body model is built with the board's
 // long axis along local X, so the whole rider is turned a quarter turn to
@@ -150,7 +168,7 @@ let landCrouch=0, lastBand='', bandT=0, best=0, crashT=0;
 
 // ═══════════════════ INPUT ═══════════════════
 const K={};
-const IN={steer:0,pitch:0,roll:0,tuck:false,brake:false,grab:false};
+const IN={steer:0,flip:0,cork:0,tuck:false,brake:false,grab:false};
 addEventListener('keydown',e=>{
   if(e.code==='Space')e.preventDefault();
   if(!K[e.code]&&e.code==='Space')ollie();
@@ -158,15 +176,19 @@ addEventListener('keydown',e=>{
   if(e.code==='KeyR')reset();
 });
 addEventListener('keyup',e=>{K[e.code]=false;});
-let touchSteer=null,touchGrab=false,touchX0=0;
+let touchSteer=null,touchGrab=false,touchFlip=false,touchX0=0;
+// Flip and cork get their OWN keys. They used to share W/S with tuck and
+// brake, which meant the only way to set a flip was to be braking at the exact
+// instant of takeoff — the two intents fought each other and flips were
+// effectively unreachable.
 function readInput(){
   const L=K.ArrowLeft||K.KeyA, Rt=K.ArrowRight||K.KeyD;
   IN.steer=(Rt?1:0)-(L?1:0);
   if(touchSteer!==null)IN.steer=touchSteer;
-  IN.pitch=(K.ArrowUp||K.KeyW?1:0)-(K.ArrowDown||K.KeyS?1:0);
-  IN.roll=(K.KeyE?1:0)-(K.KeyQ?1:0);
-  IN.tuck=!!(K.ArrowUp||K.KeyW)&&!R.air;
-  IN.brake=!!(K.ArrowDown||K.KeyS)&&!R.air;
+  IN.flip=(K.ArrowUp?1:0)-(K.ArrowDown?1:0)+(touchFlip?1:0);
+  IN.cork=(K.KeyE?1:0)-(K.KeyQ?1:0);
+  IN.tuck=!!K.KeyW&&!R.air;
+  IN.brake=!!K.KeyS;
   IN.grab=!!(K.ShiftLeft||K.ShiftRight||K.KeyG)||touchGrab;
 }
 // Steering follows ONE pointer, and only while it is genuinely held down.
@@ -195,7 +217,21 @@ $('grabBtn').addEventListener('pointerdown',grabOn,{passive:false});
 $('grabBtn').addEventListener('pointerup',grabOff);
 $('grabBtn').addEventListener('pointercancel',grabOff);
 $('grabBtn').addEventListener('pointerleave',grabOff);
+const flipOn=e=>{e.preventDefault();e.stopPropagation();touchFlip=true;};
+const flipOff=()=>{touchFlip=false;};
+$('flipBtn').addEventListener('pointerdown',flipOn,{passive:false});
+$('flipBtn').addEventListener('pointerup',flipOff);
+$('flipBtn').addEventListener('pointercancel',flipOff);
+$('flipBtn').addEventListener('pointerleave',flipOff);
 $('resetBtn').addEventListener('click',reset);
+// controls sheet
+$('helpBtn').addEventListener('click',e=>{e.stopPropagation();
+  document.body.classList.toggle('showhelp');});
+$('helpClose').addEventListener('click',e=>{e.stopPropagation();
+  document.body.classList.remove('showhelp');});
+// play.html#controls opens straight to the controls — handy for linking
+// someone to "how do I spin" without making them find the button
+if(location.hash==='#controls')document.body.classList.add('showhelp');
 
 // ═══════════════════ RIDE PHYSICS ═══════════════════
 // Drag sets terminal speed, and terminal speed is what makes a grade mean
@@ -207,7 +243,10 @@ const POP=4.9, DRAG=0.0090, EDGE_SCRUB=3.0, BRAKE=9.0;
 // a fixed rad/s made the board pivot like a turntable — full edge produced a
 // 4 m circle and the rider never got down the hill.
 const CARVE_R=17;                 // metres at full edge
-const YAW_LIMIT=1.15;             // ±66° from the fall line; no riding uphill
+// No heading clamp. You can turn all the way round and ride back up if you
+// want to — gravity is taken from the local slope, so climbing simply bleeds
+// speed until you stop, which is the honest outcome rather than an invisible
+// wall at 66 degrees.
 const CFG=defaultConfig();
 
 // ── TAKEOFF: the only moment rotation is created ──────────────────────────
@@ -215,17 +254,17 @@ const CFG=defaultConfig();
 // Every bit of rotation comes from the ground, so it is set ONCE here, from
 // the coil you wound up on the approach plus the yaw the carve already had.
 // After this L is constant until you touch down again.
-const WIND_REV=0.95, CARVE_REV=0.22, FLIP_REV=0.65, CORK_REV=0.55;
+const WIND_REV=0.95, CARVE_REV=0.22, FLIP_REV=1.15, CORK_REV=0.95;
 function takeoff(){
   const parts=partsFromPose(currentPose());
   const I=bodyInertia(parts).I;
   // body axes: board runs along X, up is Y, across the board is Z
   const spin=(R.wind*WIND_REV+R.edge*CARVE_REV)*TAU;   // yaw, about Y
-  const flip=IN.pitch*FLIP_REV*TAU;                    // over the nose, about Z
-  const cork=IN.roll*CORK_REV*TAU;                     // along the board, about X
+  const flip=R.windF*FLIP_REV*TAU;                     // over the nose, about Z
+  const cork=R.windC*CORK_REV*TAU;                     // along the board, about X
   R.L=qRot(R.q,mv3(I,[cork,spin,flip]));
-  R.wind*=0.12;                     // the coil is spent into the spin
-  R.spin=0;R.airT=0;
+  R.wind*=0.12;R.windF*=0.12;R.windC*=0.12;   // the coils are spent
+  R.spin=0;R.flip=0;R.airT=0;
 }
 function ollie(){
   if(R.air||crashT>0)return;
@@ -235,7 +274,7 @@ function ollie(){
 function reset(){
   R.x=0;R.z=0;R.v=8;R.vy=0;R.yaw=0;R.drift=0;R.edge=0;
   R.air=false;R.airT=0;R.q=[1,0,0,0];R.L=[0,0,0];R.w=[0,0,0];
-  R.wind=0;R.spin=0;R.dist=0;
+  R.wind=0;R.windF=0;R.windC=0;R.spin=0;R.flip=0;R.dist=0;
   R.y=terrainH(0,0);landCrouch=0;lastBand='';bandT=0;crashT=0;
 }
 
@@ -244,7 +283,12 @@ function stepRide(dt){
     crashT-=dt;R.v=Math.max(0,R.v-6*dt);
     R.x+=Math.sin(R.drift)*R.v*dt;R.z+=Math.cos(R.drift)*R.v*dt;
     R.y=terrainH(R.x,R.z);
-    if(crashT<=0){R.v=Math.max(4,R.v);landCrouch=0.5;}
+    if(crashT<=0){
+      // point back down the hill and get going again, so a crash costs you
+      // time and speed rather than ending the run
+      R.yaw=Math.round(R.yaw/TAU)*TAU;R.drift=R.yaw;
+      R.v=Math.max(5,R.v);landCrouch=0.5;
+    }
     return;
   }
   if(!R.air){
@@ -262,7 +306,15 @@ function stepRide(dt){
     if(IN.brake)a-=BRAKE;
     if(IN.tuck)a+=1.5;
     R.v=Math.max(0.8,R.v+a*dt);
-    R.yaw=clamp(R.yaw+R.edge*(Math.max(R.v,3)/CARVE_R)*dt,-YAW_LIMIT,YAW_LIMIT);
+    R.yaw+=R.edge*(Math.max(R.v,3)/CARVE_R)*dt;
+    // You cannot hold a traverse at walking pace — the board slips round to
+    // the fall line. Without this, removing the heading clamp let you carve
+    // all the way uphill, stall at zero, and stay there facing up the hill
+    // with no way to recover.
+    if(R.v<2.6){
+      const down=Math.round(R.yaw/TAU)*TAU;      // nearest downhill heading
+      R.yaw=lerp(R.yaw,down,Math.min(1,2.2*dt*(2.6-R.v)/2.6));
+    }
     R.drift=lerp(R.drift,R.yaw,1-Math.exp(-7*dt));
 
     const h0=terrainH(R.x,R.z);
@@ -272,11 +324,19 @@ function stepRide(dt){
     const vyT=(h1-h0)/dt;                     // vertical rate of the snow itself
     // Would following the ground require falling faster than gravity? If the
     // terrain drops away harder than a free body would, you have left it.
-    // WIND UP. Holding an edge coils the torso against the board; that stored
-    // twist is what you unwind through the lip. It bleeds away if you ride
-    // neutral, so a spin has to be set up rather than summoned.
-    R.wind=clamp(R.wind+IN.steer*1.15*dt,-1,1);
-    if(IN.steer===0)R.wind-=R.wind*Math.min(1,1.6*dt);
+    // WIND UP, on three axes. Holding an edge coils the torso for a SPIN; the
+    // flip and cork keys load those axes the same way. All of it is set up on
+    // the ground because none of it can be created in the air.
+    //
+    // They decay slowly rather than instantly, which doubles as the buffer for
+    // a kicker you did not see coming: load a flip, and it is still there a
+    // second later when the lip arrives.
+    R.wind =clamp(R.wind +IN.steer*1.15*dt,-1,1);
+    R.windF=clamp(R.windF+IN.flip *1.45*dt,-1,1);
+    R.windC=clamp(R.windC+IN.cork *1.45*dt,-1,1);
+    if(IN.steer===0)R.wind -=R.wind *Math.min(1,1.6*dt);
+    if(IN.flip ===0)R.windF-=R.windF*Math.min(1,0.8*dt);
+    if(IN.cork ===0)R.windC-=R.windC*Math.min(1,0.8*dt);
 
     const xN=R.x+Math.sin(R.drift)*R.v*dt, zN=R.z+Math.cos(R.drift)*R.v*dt;
     const hN=terrainH(xN,zN);
@@ -300,6 +360,7 @@ function stepRide(dt){
     R.w=wb;
     R.q=qStep(R.q,qRot(R.q,wb),dt);
     R.spin+=Math.abs(wb[1])/TAU*dt;            // revolutions of yaw
+    R.flip+=Math.abs(wb[2])/TAU*dt;            // revolutions over the nose
     R.vy-=G*dt;
     R.y+=R.vy*dt;
     R.x+=Math.sin(R.drift)*R.v*dt;
@@ -326,20 +387,24 @@ function land(){
   }
   if(band==='crash')crashT=1.1;
   // touching down is what kills the rotation — the snow takes the momentum
-  R.yaw=R.drift;R.L=[0,0,0];R.w=[0,0,0];R.vy=0;R.spin=0;R.wind=0;
+  R.yaw=R.drift;R.L=[0,0,0];R.w=[0,0,0];R.vy=0;
+  R.spin=0;R.flip=0;R.wind=0;R.windF=0;R.windC=0;
   landCrouch=band==='crash'?1.0:0.42;
 }
 
 function hitProps(){
-  if(crashT>0)return;
-  const k0=Math.floor((R.z-PROP_SPACING)/PROP_SPACING);
-  for(let k=k0;k<=k0+2;k++){
-    const p=propAt(k);if(!p)continue;
+  // Below walking pace there is no crash to have — and without this guard a
+  // rider who stops inside a tree's radius re-triggers the collision every
+  // frame, pinning speed at zero forever with no way out.
+  if(crashT>0||R.v<3)return;
+  const i0=Math.round(R.x/PROP_SX), j0=Math.round(R.z/PROP_SZ);
+  for(let i=i0-1;i<=i0+1;i++)for(let j=j0-1;j<=j0+1;j++){
+    const p=propAt(i,j);if(!p)continue;
     const dx=R.x-p.x,dz=R.z-p.z;
     const rr=p.r+0.5;
     if(dx*dx+dz*dz<rr*rr&&R.y<terrainH(p.x,p.z)+(p.tree?3.4:1.1)*p.s){
       lastBand='crash';bandT=1.5;crashT=1.1;R.air=false;
-      R.v*=0.25;R.w=[0,0,0];R.spin=0;landCrouch=1.0;
+      R.v*=0.25;R.L=[0,0,0];R.w=[0,0,0];R.spin=0;R.wind=0;landCrouch=1.0;
       return;
     }
   }
@@ -405,7 +470,10 @@ const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
 renderer.setPixelRatio(Math.min(2,devicePixelRatio));
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x8fb4dd);
-scene.fog=new THREE.Fog(0xa8c6e6,120,340);
+// Fog is pulled in deliberately so it swallows the edge of the terrain grid
+// before you can see it end. The peaks opt OUT of fog (below) so they still
+// read as a horizon rather than dissolving with the ground.
+scene.fog=new THREE.Fog(0xa8c6e6,70,215);
 const camera=new THREE.PerspectiveCamera(52,1,0.1,900);
 // Snow whites out under flat light: with ambient near 1.0 every facet returns
 // the same value and the hill reads as a blank sheet. Keep ambient LOW and let
@@ -509,18 +577,20 @@ for(let i=0;i<POOL;i++){
   props.push({g,rock,tree});
 }
 function placeProps(){
-  const k0=Math.floor((R.z-30)/PROP_SPACING);
+  // walk the cells around the rider, nearest bands first, until the pool fills
+  const i0=Math.round(R.x/PROP_SX), j0=Math.round(R.z/PROP_SZ);
   let n=0;
-  for(let k=k0;k<k0+POOL*2&&n<POOL;k++){
-    const p=propAt(k);if(!p)continue;
-    const it=props[n++];
-    it.g.visible=true;
-    it.g.position.set(p.x,terrainH(p.x,p.z)-0.25,p.z);
-    it.g.scale.setScalar(p.s);
-    it.g.rotation.y=hashAt(k,17)*6.283;
-    it.rock.visible=!p.tree;
-    it.tree.visible=p.tree;
-  }
+  for(let j=j0-3;j<=j0+14&&n<POOL;j++)
+    for(let i=i0-4;i<=i0+4&&n<POOL;i++){
+      const p=propAt(i,j);if(!p)continue;
+      const it=props[n++];
+      it.g.visible=true;
+      it.g.position.set(p.x,terrainH(p.x,p.z)-0.25,p.z);
+      it.g.scale.setScalar(p.s);
+      it.g.rotation.y=hashAt2(i,j,17)*6.283;
+      it.rock.visible=!p.tree;
+      it.tree.visible=p.tree;
+    }
   for(;n<POOL;n++)props[n].g.visible=false;
 }
 
@@ -539,10 +609,14 @@ for(let i=0;i<MPOOL;i++){
   flag.position.y=2.5;
   g.add(pole,flag);g.visible=false;scene.add(g);marks.push(g);
 }
+// A lattice rather than two fixed lines: now that you can ride anywhere, the
+// speed reference has to exist anywhere too.
+const MARK_SX=44;
 function placeMarks(){
-  const k0=Math.floor((R.z-24)/MARK_SPACING);
+  const i0=Math.round(R.x/MARK_SX), j0=Math.floor((R.z-24)/MARK_SPACING);
   for(let n=0;n<MPOOL;n++){
-    const k=k0+(n>>1), side=(n&1)?1:-1, z=k*MARK_SPACING, x=side*22;
+    const j=j0+(n>>1), i=i0+((n&1)?0:1);
+    const x=i*MARK_SX-MARK_SX/2, z=j*MARK_SPACING;
     marks[n].visible=true;
     marks[n].position.set(x,terrainH(x,z),z);
   }
@@ -551,18 +625,39 @@ function placeMarks(){
 // ── distant peaks. They ride along with the rider at a fixed offset so they
 // never arrive: parallax you cannot reach, the way a horizon behaves. ──
 const peaks=new THREE.Group();
-const peakMat=new THREE.MeshStandardMaterial({color:0xbccfe6,roughness:1,flatShading:true});
-const capMat2=new THREE.MeshStandardMaterial({color:0xf2f7ff,roughness:1,flatShading:true});
-for(let i=0;i<16;i++){
-  const s=40+hashAt(i,31)*70;
-  const ang=(i/16)*Math.PI*2+hashAt(i,33)*0.3;
-  const rad2=300+hashAt(i,34)*90;
-  const m=new THREE.Mesh(new THREE.ConeGeometry(s*0.8,s,5),peakMat);
-  const cp=new THREE.Mesh(new THREE.ConeGeometry(s*0.34,s*0.42,5),capMat2);
-  cp.position.y=s*0.29;
+// fog:false — a horizon that fades into the same haze as the ground in front
+// of you stops reading as distance. Sitting far out and unfogged, they behave
+// like real mountains: always there, never closer.
+const peakMat=new THREE.MeshStandardMaterial({color:0x9fb6d2,roughness:1,flatShading:true,fog:false});
+const capMat2=new THREE.MeshStandardMaterial({color:0xdfeaf8,roughness:1,flatShading:true,fog:false});
+for(let i=0;i<18;i++){
+  const s=90+hashAt(i,31)*130;
+  const ang=(i/18)*Math.PI*2+hashAt(i,33)*0.34;
+  const rad2=900+hashAt(i,34)*380;             // far enough to sit ON the horizon
+  const m=new THREE.Mesh(new THREE.ConeGeometry(s*0.85,s,5),peakMat);
+  const cp=new THREE.Mesh(new THREE.ConeGeometry(s*0.33,s*0.40,5),capMat2);
+  cp.position.y=s*0.30;
   const g=new THREE.Group();g.add(m,cp);
-  g.position.set(Math.sin(ang)*rad2,s*0.30,Math.cos(ang)*rad2);
+  // Offsets only — the height is recomputed every frame in placePeaks(),
+  // because the mountain FALLS AWAY beneath them. A peak 900 m down the hill
+  // sits ~360 m lower than the rider, and pinning it at a fixed offset left
+  // the whole range hanging in the sky like cut-outs.
+  g.userData={dx:Math.sin(ang)*rad2, dz:Math.cos(ang)*rad2, s};
+  g.rotation.y=hashAt(i,35)*3.1;
   peaks.add(g);
+}
+// Peaks do NOT follow the slope down. If they did, everything downhill would
+// sit below your sightline and there would be no horizon at all — which is
+// geometrically true for an endless ramp and looks like nothing. Real ranges
+// rise again across a valley, so they descend at a fraction of the fall line
+// and end up roughly at eye level, far away.
+const PEAK_DROP=0.28;
+function placePeaks(){
+  peaks.position.set(R.x,baseY(R.z),R.z);
+  for(const g of peaks.children){
+    const d=g.userData;
+    g.position.set(d.dx, -PEAK_DROP*d.dz+d.s*0.16, d.dz);
+  }
 }
 scene.add(peaks);
 
@@ -600,14 +695,26 @@ function syncRider(parts,com){
 const camPos=new THREE.Vector3(),camTgt=new THREE.Vector3();
 let camInit=false;
 function stepCamera(dt){
-  const back=8.5+R.v*0.16, up=5.2+R.v*0.10+Math.max(0,R.y-terrainH(R.x,R.z))*0.5;
+  // Closer and a little lower than before: at 8.5 m back the rider was a speck
+  // on a big screen. Still clearly above the slope, just near enough to read
+  // what the board is doing.
+  const back=6.4+R.v*0.11, up=3.4+R.v*0.075+Math.max(0,R.y-terrainH(R.x,R.z))*0.5;
   const cz=R.z-Math.cos(R.drift)*back, cx=R.x-Math.sin(R.drift)*back;
-  const want=new THREE.Vector3(cx,baseY(cz)+up,cz);
+  // Height off the BASE plane sets the framing, but the camera must clear the
+  // ACTUAL snow: baseY ignores gullies, kickers and rollers, so a camera sitting
+  // 5 m above the base plane ends up inside a 3 m gully wall or behind a lip and
+  // the view fills with the underside of the terrain.
+  const wantY=Math.max(baseY(cz)+up, terrainH(cx,cz)+2.2);
+  const want=new THREE.Vector3(cx,wantY,cz);
   const look=new THREE.Vector3(
     R.x+Math.sin(R.drift)*13, R.y+1.0, R.z+Math.cos(R.drift)*13);
   if(!camInit){camPos.copy(want);camTgt.copy(look);camInit=true;}
   const k=1-Math.exp(-4.0*dt);
   camPos.lerp(want,k);camTgt.lerp(look,k);
+  // and again AFTER easing — the lerp can trail through a rise that the target
+  // position cleared, so the hard floor has to apply to where it actually is
+  const floor=terrainH(camPos.x,camPos.z)+1.8;
+  if(camPos.y<floor)camPos.y=floor;
   camera.position.copy(camPos);
   camera.lookAt(camTgt);
 }
@@ -632,12 +739,18 @@ function updHUD(){
   $('spd').textContent=(R.v*3.6).toFixed(0);
   $('air').textContent=R.air?R.airT.toFixed(2):'—';
   $('spin').textContent=(R.spin*360).toFixed(0)+'°';
-  // the coil is the whole setup: you cannot make this in the air
+  $('flipv').textContent=(R.flip*360).toFixed(0)+'°';
+  // the coils ARE the setup — none of this can be made in the air
   const c=$('coil');
-  if(R.air){ c.textContent=(Math.abs(R.w[1])/TAU).toFixed(2)+' r/s'; c.className='mono'; }
-  else { const p=Math.round(Math.abs(R.wind)*100);
-         c.textContent=(R.wind>0.02?'▸':R.wind<-0.02?'◂':'')+p+'%';
-         c.className='mono '+(p>60?'grade-red':p>25?'grade-blue':''); }
+  if(R.air){
+    c.textContent=(Math.abs(R.w[1])/TAU).toFixed(1)+'/'+(Math.abs(R.w[2])/TAU).toFixed(1)+' r/s';
+    c.className='mono';
+  }else{
+    const s=Math.round(Math.abs(R.wind)*100), f=Math.round(Math.abs(R.windF)*100),
+          k=Math.round(Math.abs(R.windC)*100), top=Math.max(s,f,k);
+    c.textContent=(R.wind>0.02?'R':R.wind<-0.02?'L':'')+s+' ⟳'+f+' ⟲'+k;
+    c.className='mono '+(top>60?'grade-red':top>25?'grade-blue':'');
+  }
   $('best').textContent=best?best+'°':'—';
   $('dist').textContent=(R.dist/1000).toFixed(2);
   const deg=Math.atan(pitchTan(R.z))*180/Math.PI;
@@ -675,7 +788,7 @@ function tick(now){
   buildSnow();
   placeProps();
   placeMarks();
-  peaks.position.set(R.x,baseY(R.z),R.z);   // horizon follows, never arrives
+  placePeaks();                             // horizon follows, never arrives
   stepCamera(dt);
   updHUD();
   renderer.render(scene,camera);
@@ -692,6 +805,6 @@ reset();
 // Warm the world up before the first frame. With vertexColors on, an
 // unpopulated colour buffer is all zeroes — i.e. black snow — so the grid must
 // be built once here rather than relying on the first animation frame.
-buildSnow();placeProps();placeMarks();
+buildSnow();placeProps();placeMarks();placePeaks();
 requestAnimationFrame(tick);
 })();

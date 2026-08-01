@@ -90,6 +90,10 @@ body.clean #hideUI{opacity:.35}
    ═══════════════════════════════════════════════════════════════════════ */
 @media (max-width:900px), (max-height:600px){
   body{display:grid;grid-template-rows:auto minmax(0,1fr) auto;
+    /* constrain the column explicitly: with rows only the implicit column is
+       `auto`, which can resolve to max-content, and the HUD ribbon is nowrap.
+       Defensive — measured scrollWidth matches innerWidth without it too. */
+    grid-template-columns:minmax(0,1fr);
     grid-template-areas:"hud" "stage" "bar";
     padding:env(safe-area-inset-top) env(safe-area-inset-right)
             env(safe-area-inset-bottom) env(safe-area-inset-left)}
