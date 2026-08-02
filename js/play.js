@@ -502,6 +502,12 @@ function land(){
   // landing throws snow — more of it the harder you come down
   emitSpray(band==='stomp'?6:12,1.6+Math.min(6,-R.vy*0.30),1.5);
   R.shake=Math.min(1,Math.max(R.shake,(band==='crash'?0.7:0.28)));
+  // The track begins again HERE. Skipping samples while airborne was not
+  // enough: the ribbon is one continuous strip, so the quad joining the last
+  // sample before the lip to the first one after it drew a plank of compressed
+  // snow straight across the gap, through mid-air. Starting a fresh strip at
+  // the landing is both correct and what you actually want to see.
+  trailN=0;lastTrailX=R.x;lastTrailZ=R.z;
   // Land switch and you STAY switch — carried as a render offset so the board
   // does not visibly snap through 180 degrees the instant you touch down.
   const dir=qRot(R.q,[1,0,0]);
@@ -862,7 +868,9 @@ function pushTrail(){
   lastTrailX=R.x;lastTrailZ=R.z;
   // the trench is as wide as the board is edged over: a flat base leaves a
   // narrow line, a hard carve digs a broad one
-  const w=0.22+Math.abs(R.edge)*0.30+R.skid*0.22;
+  // A board is about 26 cm across. The trench widens a little on edge and a
+  // little more in a skid, but it is a track — not a road.
+  const w=0.16+Math.abs(R.edge)*0.09+Math.min(R.skid,1.5)*0.10;
   const nx=Math.cos(R.drift), nz=-Math.sin(R.drift);  // across the direction of travel
   if(trailN>=TRAIL_MAX){                              // scroll the ring down by one
     trailPos.copyWithin(0,6);trailCol.copyWithin(0,6);
