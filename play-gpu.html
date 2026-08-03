@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Free Ride (WebGPU) — Daily Kicker</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/play.css">
+</head>
+<body class="play">
+<div id="hud" class="panel">
+  <h2>Free Ride <span class="gpu">GPU</span></h2>
+  <button id="helpBtn" class="hudbtn" title="how to ride" aria-label="How to ride">?</button>
+  <button id="resetBtn" class="hudbtn" title="reset (R)" aria-label="Reset">↺</button>
+  <div class="row"><label>km/h</label><span class="mono" id="spd">0</span></div>
+  <div class="row"><label>air</label><span class="mono" id="air">—</span></div>
+  <div class="row coilrow"><label>coil</label><span class="mono" id="coil">0 ⟳0 ⟲0</span></div>
+  <div class="row"><label>spin</label><span class="mono" id="spin">0°</span></div>
+  <div class="row"><label>flip</label><span class="mono" id="flipv">0°</span></div>
+  <div class="row"><label>best</label><span class="mono" id="best">—</span></div>
+  <div class="row"><label>km</label><span class="mono" id="dist">0.00</span></div>
+  <div class="row"><label>pitch</label><span class="mono" id="grade">—</span></div>
+</div>
+
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="band" class="big"></div>
+  <div id="help"><b>Wind up before the lip</b> · WebGPU</div>
+
+  <!-- WebGPU is not everywhere yet, and failing silently on a black canvas is
+       the worst possible outcome. Say what happened, and point at the version
+       that runs on anything. -->
+  <div id="gpuFail" hidden>
+    <div class="box">
+      <h3>This one needs WebGPU</h3>
+      <p class="why"></p>
+      <p class="detail sub"></p>
+      <p><a href="play.html">Ride the WebGL version instead →</a></p>
+    </div>
+  </div>
+</div>
+
+<!-- Control deck. Built for two thumbs: the left one lives on the carve pad,
+     the right one on the actions. Nothing important sits in the middle of the
+     screen where a hand would cover the run. -->
+<div id="deck">
+  <div id="pad" aria-label="Carve">
+    <div id="padTrack"><div id="padCoil"></div><div id="padThumb"></div></div>
+    <span class="padlbl" id="padLbl">CARVE &amp; COIL</span>
+  </div>
+  <div id="acts">
+    <div class="actrow">
+      <button id="flipBtn" class="act" aria-label="Load flip">⟳<span>FLIP</span></button>
+      <button id="grabBtn" class="act" aria-label="Grab">✊<span>GRAB</span></button>
+    </div>
+    <button id="ollieBtn" class="act primary">OLLIE</button>
+  </div>
+</div>
+
+<!-- Controls. The physics here is unusual enough that it needs explaining:
+     rotation is created only at takeoff, so "how do I spin" has a real answer
+     that is not discoverable by mashing buttons in the air. -->
+<div id="controls">
+  <div class="cwrap">
+    <h2>How to ride</h2>
+    <p class="sub">All rotation is created at the moment you leave the snow.
+      In the air you cannot start a spin — there is nothing to push against.
+      You wind it up <b>first</b>, then pop.</p>
+
+    <h3>1 · Wind up on the ground</h3>
+    <table>
+      <tr><td class="k2">Carve pad ↔</td><td>your <b>edge</b>. Carving also coils a <b>spin</b> — the bar behind the thumb fills as it winds</td></tr>
+      <tr><td class="k2">Carve pad ↕</td><td>your <b>weight</b>. Thumb forward drives the nose and gains speed; thumb back lifts it into a <b>tail press</b> and scrubs</td></tr>
+      <tr><td class="k2">⟳ Flip</td><td><b>hold</b> to load a flip</td></tr>
+    </table>
+    <p class="sub">An edge only holds so much. Ask for more turn than it has —
+      too much speed, too much angle — and the board breaks into a <b>skid</b>:
+      it still points where you steered but stops going there, throws snow and
+      scrubs speed. Trading turn against speed is the whole game on the ground.</p>
+    <p class="sub">The coils fade slowly when you let go, so a flip you loaded a
+      second ago is still there when the lip arrives.</p>
+
+    <h3>2 · Leave the ground</h3>
+    <table>
+      <tr><td class="k2">OLLIE</td><td>pops, and spends every coil into rotation</td></tr>
+      <tr><td class="k2">Tap the snow</td><td>same as Ollie — quicker when your thumb is already there</td></tr>
+      <tr><td class="k2">A kicker</td><td>launches you the same way, using whatever you have loaded</td></tr>
+    </table>
+
+    <h3>3 · In the air: change your shape</h3>
+    <table>
+      <tr><td class="k2">✊ Grab</td><td><b>hold</b> — tucks you up. Flips and corks go ~2.5× faster</td></tr>
+      <tr><td class="k2">Release</td><td>opens you out and slows the rotation to check it</td></tr>
+      <tr><td class="k2">L / R Shift</td><td>grab with that <b>hand</b> — left is an Indy, right is a Mute</td></tr>
+    </table>
+    <p class="sub">Coming down you spot the landing and check the rotation, so the
+      board wants to arrive square. Landing switch counts — it is a landing, not
+      a mistake. Clip a rock or a tree and you get knocked off line and lose
+      speed, but you keep riding.</p>
+    <p class="sub">A grab does <b>not</b> speed up a flat spin: folding over moves mass
+      away from the vertical axis, so yaw actually slows a little. Standing tall
+      is the fastest spin there is. That is real, and it is why riders tuck for
+      corked rotations and open up to bring one back down.</p>
+    <p class="sub">Land square to stomp it. The steeper the pitch the faster you go —
+      the HUD shows the grade, blue through black.</p>
+
+    <h3>Keyboard</h3>
+    <table>
+      <tr><td class="k2">A / D</td><td>carve and coil a spin</td></tr>
+      <tr><td class="k2">↑ / ↓</td><td>load a flip · <span class="k2">Q / E</span> cork</td></tr>
+      <tr><td class="k2">Space</td><td>ollie · <span class="k2">L/R Shift</span> grab with that hand</td></tr>
+      <tr><td class="k2">W / S</td><td>lean forward for speed · lean back into a tail press</td></tr>
+      <tr><td class="k2">R</td><td>reset</td></tr>
+    </table>
+    <button id="helpClose">Ride</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/ride-sim.js"></script>
+<script src="js/ride-view-webgpu.js"></script>
+</body>
+</html>
